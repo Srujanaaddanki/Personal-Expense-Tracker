@@ -25,6 +25,26 @@
     </properties>
 
     <dependencies>
+        <!-- Spring JDBC and HikariCP Connection Pooling -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <!-- PostgreSQL JDBC Driver -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- H2 Database for In-Memory PostgreSQL-Compatible Testing -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Testing Framework (JUnit 5, AssertJ, Mockito) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

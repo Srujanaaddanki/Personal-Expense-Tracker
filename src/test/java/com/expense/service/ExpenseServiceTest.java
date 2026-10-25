@@ -1061,4 +1061,84 @@ class ExpenseServiceTest {
             throw new PersistenceException("Simulated disk write failure");
         }
     }
+
+    @Test
+    @DisplayName("Repository integration: ExpenseService accepts database-generated IDs from ExpenseRepository")
+    void testExpenseServiceWithDatabaseGeneratedIds() {
+        com.expense.repository.ExpenseRepository dbRepo = new com.expense.repository.ExpenseRepository() {
+            private long dbSeq = 500L;
+
+            @Override
+            public List<Expense> findAll() {
+                return List.of();
+            }
+
+            @Override
+            public Optional<Expense> findById(Long id) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Expense save(Expense expense) {
+                return new Expense(dbSeq++, expense.getDescription(), expense.getCategory(), expense.getAmount(), expense.getDate());
+            }
+
+            @Override
+            public Optional<Expense> update(Expense expense) {
+                return Optional.of(expense);
+            }
+
+            @Override
+            public boolean deleteById(Long id) {
+                return true;
+            }
+
+            @Override
+            public String getStorageLocation() {
+                return "mock-db";
+            }
+        };
+
+        ExpenseService service = new ExpenseService(dbRepo);
+        Expense e1 = service.addExpense("DB Item 1", "Misc", BigDecimal.TEN, LocalDate.now());
+        assertEquals(500L, e1.getId());
+
+        Expense e2 = service.addExpense("DB Item 2", "Misc", BigDecimal.ONE, LocalDate.now());
+        assertEquals(501L, e2.getId());
+
+        assertEquals(2, service.getExpenseCount());
+    }
+
+    @Test
+    @DisplayName("Repository integration: Generic repository failure prevents in-memory addition")
+    void testExpenseServiceRollbackOnGenericRepositoryFailure() {
+        com.expense.repository.ExpenseRepository failingRepo = new com.expense.repository.ExpenseRepository() {
+            @Override
+            public List<Expense> findAll() { return List.of(); }
+
+            @Override
+            public Optional<Expense> findById(Long id) { return Optional.empty(); }
+
+            @Override
+            public Expense save(Expense expense) {
+                throw new PersistenceException("Simulated DB connection timeout");
+            }
+
+            @Override
+            public Optional<Expense> update(Expense expense) { return Optional.empty(); }
+
+            @Override
+            public boolean deleteById(Long id) { return false; }
+
+            @Override
+            public String getStorageLocation() { return "failing-db"; }
+        };
+
+        ExpenseService service = new ExpenseService(failingRepo);
+        assertThrows(PersistenceException.class, () ->
+                service.addExpense("Test", "Category", BigDecimal.TEN, LocalDate.now()));
+
+        assertEquals(0, service.getExpenseCount());
+        assertTrue(service.getAllExpenses().isEmpty());
+    }
 }

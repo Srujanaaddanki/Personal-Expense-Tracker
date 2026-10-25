@@ -2,6 +2,8 @@ package com.expense.service;
 
 import com.expense.exception.PersistenceException;
 import com.expense.model.Expense;
+import com.expense.repository.CsvExpenseRepository;
+import com.expense.repository.ExpenseRepository;
 import com.expense.storage.CsvExpenseStorage;
 import com.expense.util.InputValidator;
 
@@ -40,27 +42,36 @@ public class ExpenseService {
 
     private final List<Expense> expenses;
     private long nextId;
-    private final CsvExpenseStorage storage;
-    private final Path dataFilePath;
+    private final ExpenseRepository repository;
 
     /**
      * Initializes an in-memory expense service without persistence.
      */
     public ExpenseService() {
-        this(null, null);
+        this((ExpenseRepository) null);
+    }
+
+    /**
+     * Initializes an expense service with a custom repository implementation.
+     *
+     * @param repository Storage repository for persisting and loading expenses
+     */
+    public ExpenseService(ExpenseRepository repository) {
+        this.expenses = new ArrayList<>();
+        this.nextId = 1L;
+        this.repository = repository;
     }
 
     /**
      * Initializes an expense service with automated CSV persistence.
      *
+     * <p>Retained for backward compatibility with existing Milestone 4A tests and callers.
+     *
      * @param storage Storage handler for reading and writing CSV files
      * @param dataFilePath Path to the target CSV persistence file
      */
     public ExpenseService(CsvExpenseStorage storage, Path dataFilePath) {
-        this.expenses = new ArrayList<>();
-        this.nextId = 1L;
-        this.storage = storage;
-        this.dataFilePath = dataFilePath;
+        this(storage != null && dataFilePath != null ? new CsvExpenseRepository(storage, dataFilePath) : null);
     }
 
     /**
@@ -110,17 +121,21 @@ public class ExpenseService {
             this.expenses.add(copyExpense(e));
         }
         this.nextId = maxId + 1;
+
+        if (repository instanceof CsvExpenseRepository csvRepo) {
+            csvRepo.setExpenses(this.expenses);
+        }
     }
 
     /**
-     * Loads existing expenses from the configured storage file if persistence is enabled.
+     * Loads existing expenses from the configured storage repository if persistence is enabled.
      *
-     * @throws PersistenceException if loading fails due to corrupt syntax or I/O failure
+     * @throws PersistenceException if loading fails due to corrupt syntax or storage I/O failure
      */
     public void loadFromStorage() {
         if (isPersistenceEnabled()) {
             try {
-                List<Expense> loaded = storage.loadExpenses(dataFilePath);
+                List<Expense> loaded = repository.findAll();
                 loadExpenses(loaded);
             } catch (IllegalArgumentException | IllegalStateException e) {
                 throw new PersistenceException("Failed to load expenses from storage: " + e.getMessage(), e);
@@ -129,10 +144,10 @@ public class ExpenseService {
     }
 
     /**
-     * Creates and records a new expense with an auto-incremented ID.
+     * Creates and records a new expense with an assigned ID.
      *
-     * <p>If persistence is enabled, the new expense is persisted immediately.
-     * If persistence fails, the in-memory state is rolled back to prevent inconsistency.
+     * <p>If persistence is enabled, the new expense is persisted immediately through the configured
+     * repository. If persistence fails, the in-memory state and counter are rolled back to prevent inconsistency.
      *
      * @param description Brief description of the expense
      * @param category    Expense category
@@ -149,27 +164,40 @@ public class ExpenseService {
         InputValidator.validateAmount(amount);
         InputValidator.validateDate(date);
 
-        if (nextId == Long.MAX_VALUE) {
-            throw new IllegalStateException("Expense ID limit reached (Long.MAX_VALUE). Cannot add more expenses.");
-        }
-
-        long allocatedId = nextId;
-        Expense expense = new Expense(allocatedId, description.trim(), category.trim(), amount, date);
-        expenses.add(expense);
-        nextId++;
-
+        Expense saved;
         if (isPersistenceEnabled()) {
-            try {
-                storage.saveExpenses(this.expenses, dataFilePath);
-            } catch (PersistenceException e) {
-                // Transactional rollback: revert in-memory addition and restore ID counter
-                expenses.remove(expenses.size() - 1);
-                nextId = allocatedId;
-                throw e;
+            if (repository instanceof CsvExpenseRepository) {
+                if (nextId == Long.MAX_VALUE) {
+                    throw new IllegalStateException("Expense ID limit reached (Long.MAX_VALUE). Cannot add more expenses.");
+                }
+                long allocatedId = nextId;
+                Expense toPersist = new Expense(allocatedId, description.trim(), category.trim(), amount, date);
+                try {
+                    saved = repository.save(toPersist);
+                    nextId = allocatedId + 1;
+                } catch (PersistenceException e) {
+                    nextId = allocatedId;
+                    throw e;
+                }
+            } else {
+                Expense toPersist = new Expense(description.trim(), category.trim(), amount, date);
+                saved = repository.save(toPersist);
+                if (saved.getId() != null && saved.getId() >= nextId && saved.getId() < Long.MAX_VALUE) {
+                    nextId = saved.getId() + 1;
+                }
             }
+            expenses.add(copyExpense(saved));
+        } else {
+            if (nextId == Long.MAX_VALUE) {
+                throw new IllegalStateException("Expense ID limit reached (Long.MAX_VALUE). Cannot add more expenses.");
+            }
+            long allocatedId = nextId;
+            saved = new Expense(allocatedId, description.trim(), category.trim(), amount, date);
+            expenses.add(saved);
+            nextId = allocatedId + 1;
         }
 
-        return copyExpense(expense);
+        return copyExpense(saved);
     }
 
     /**
@@ -445,7 +473,14 @@ public class ExpenseService {
 
         if (isPersistenceEnabled()) {
             try {
-                storage.saveExpenses(this.expenses, dataFilePath);
+                Optional<Expense> updated = repository.update(existing);
+                if (updated.isEmpty()) {
+                    existing.setDescription(prevDesc);
+                    existing.setCategory(prevCat);
+                    existing.setAmount(prevAmount);
+                    existing.setDate(prevDate);
+                    return Optional.empty();
+                }
             } catch (PersistenceException e) {
                 // Transactional rollback: restore original values on failure
                 existing.setDescription(prevDesc);
@@ -478,7 +513,11 @@ public class ExpenseService {
                 Expense removed = expenses.remove(i);
                 if (isPersistenceEnabled()) {
                     try {
-                        storage.saveExpenses(this.expenses, dataFilePath);
+                        boolean deleted = repository.deleteById(id);
+                        if (!deleted) {
+                            expenses.add(i, removed);
+                            return false;
+                        }
                     } catch (PersistenceException e) {
                         // Transactional rollback: re-insert removed entity at original index
                         expenses.add(i, removed);
@@ -597,21 +636,42 @@ public class ExpenseService {
     }
 
     /**
-     * Checks if automated CSV persistence is active for this service instance.
+     * Checks if automated persistence is active for this service instance.
      *
-     * @return {@code true} if storage and dataFilePath are configured; {@code false} otherwise
+     * @return {@code true} if a repository is configured; {@code false} otherwise
      */
     public boolean isPersistenceEnabled() {
-        return storage != null && dataFilePath != null;
+        return repository != null;
     }
 
     /**
-     * Gets the configured target CSV file path.
+     * Gets the configured target CSV file path if running in CSV mode.
      *
-     * @return Target file path, or {@code null} if running in in-memory mode
+     * @return Target file path, or {@code null} if running in database or in-memory mode
      */
     public Path getDataFilePath() {
-        return dataFilePath;
+        if (repository instanceof CsvExpenseRepository csvRepo) {
+            return csvRepo.getDataFilePath();
+        }
+        return null;
+    }
+
+    /**
+     * Gets the storage location description (e.g. file path or JDBC URL).
+     *
+     * @return Storage target description, or {@code "in-memory"} if persistence is disabled
+     */
+    public String getStorageLocation() {
+        return repository != null ? repository.getStorageLocation() : "in-memory";
+    }
+
+    /**
+     * Gets the underlying repository implementation.
+     *
+     * @return Configured {@link ExpenseRepository}, or {@code null} if in-memory
+     */
+    public ExpenseRepository getRepository() {
+        return repository;
     }
 
     // --- Private Helper Methods ---

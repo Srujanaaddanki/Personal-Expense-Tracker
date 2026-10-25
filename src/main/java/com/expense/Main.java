@@ -1,7 +1,9 @@
 package com.expense;
 
+import com.expense.config.RepositoryFactory;
 import com.expense.exception.PersistenceException;
 import com.expense.model.Expense;
+import com.expense.repository.ExpenseRepository;
 import com.expense.service.ExpenseService;
 import com.expense.storage.CsvExpenseStorage;
 import com.expense.util.InputValidator;
@@ -40,8 +42,8 @@ public class Main {
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
-        CsvExpenseStorage storage = new CsvExpenseStorage();
-        ExpenseService service = new ExpenseService(storage, DEFAULT_DATA_PATH);
+        ExpenseRepository repository = RepositoryFactory.createRepository();
+        ExpenseService service = new ExpenseService(repository);
         Main app = new Main(scanner, service);
         app.run();
     }
@@ -58,12 +60,13 @@ public class Main {
             try {
                 expenseService.loadFromStorage();
                 int loadedCount = expenseService.getExpenseCount();
+                String location = expenseService.getStorageLocation();
                 if (loadedCount > 0) {
                     System.out.printf("[INFO] Loaded %d existing expense(s) from '%s'.%n",
-                            loadedCount, expenseService.getDataFilePath());
+                            loadedCount, location);
                 } else {
                     System.out.printf("[INFO] No existing expense data found at '%s'. A new file will be created on first save.%n",
-                            expenseService.getDataFilePath());
+                            location);
                 }
             } catch (PersistenceException e) {
                 System.out.println("\n[ERROR] Failed to load data file: " + e.getMessage());
