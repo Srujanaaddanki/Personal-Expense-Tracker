@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -147,6 +148,80 @@ public class ExpenseService {
             }
         }
         return Collections.unmodifiableList(matches);
+    }
+
+    /**
+     * Returns a sorted list of expenses ordered by monetary amount.
+     *
+     * <p><b>DSA Analysis:</b>
+     * <ul>
+     *   <li><b>Comparator Strategy:</b> Uses {@link Comparator#comparing(java.util.function.Function)}
+     *       with {@link Expense#getAmount}, which delegates to {@link BigDecimal#compareTo(BigDecimal)}.
+     *       Ties in amount are resolved deterministically by {@link Expense#getId} in ascending order
+     *       for both sorting directions.</li>
+     *   <li><b>Non-destructive Sorting:</b> A separate {@link ArrayList} of detached copies is sorted.
+     *       The internal {@code expenses} list remains in original insertion order.</li>
+     *   <li><b>Algorithm:</b> Java TimSort (adaptive, stable hybrid of Merge Sort and Insertion Sort).</li>
+     *   <li><b>Time Complexity:</b> \(O(N \log N)\) average and worst-case; \(O(N)\) best-case.</li>
+     *   <li><b>Space Complexity:</b> \(O(N)\) for the detached copies and temporary merge buffer.</li>
+     * </ul>
+     *
+     * @param ascending {@code true} for lowest-to-highest amount; {@code false} for highest-to-lowest
+     * @return An unmodifiable list containing detached copies sorted by amount
+     */
+    public List<Expense> getExpensesSortedByAmount(boolean ascending) {
+        List<Expense> sorted = new ArrayList<>(expenses.size());
+        for (Expense expense : expenses) {
+            sorted.add(copyExpense(expense));
+        }
+
+        Comparator<Expense> comparator;
+        if (ascending) {
+            comparator = Comparator.comparing(Expense::getAmount)
+                                   .thenComparing(Expense::getId);
+        } else {
+            comparator = Comparator.comparing(Expense::getAmount, Comparator.reverseOrder())
+                                   .thenComparing(Expense::getId);
+        }
+
+        sorted.sort(comparator);
+        return Collections.unmodifiableList(sorted);
+    }
+
+    /**
+     * Returns a sorted list of expenses ordered by date incurred.
+     *
+     * <p><b>DSA Analysis:</b>
+     * <ul>
+     *   <li><b>Comparator Strategy:</b> Uses {@link Comparator#comparing(java.util.function.Function)}
+     *       with {@link Expense#getDate}. Ties in date are resolved deterministically by
+     *       {@link Expense#getId} in ascending order for both directions.</li>
+     *   <li><b>Non-destructive Sorting:</b> Allocates a detached copy list without modifying internal state.</li>
+     *   <li><b>Algorithm:</b> Java TimSort.</li>
+     *   <li><b>Time Complexity:</b> \(O(N \log N)\) average and worst-case.</li>
+     *   <li><b>Space Complexity:</b> \(O(N)\).</li>
+     * </ul>
+     *
+     * @param ascending {@code true} for oldest-to-newest date; {@code false} for newest-to-oldest
+     * @return An unmodifiable list containing detached copies sorted by date
+     */
+    public List<Expense> getExpensesSortedByDate(boolean ascending) {
+        List<Expense> sorted = new ArrayList<>(expenses.size());
+        for (Expense expense : expenses) {
+            sorted.add(copyExpense(expense));
+        }
+
+        Comparator<Expense> comparator;
+        if (ascending) {
+            comparator = Comparator.comparing(Expense::getDate)
+                                   .thenComparing(Expense::getId);
+        } else {
+            comparator = Comparator.comparing(Expense::getDate, Comparator.reverseOrder())
+                                   .thenComparing(Expense::getId);
+        }
+
+        sorted.sort(comparator);
+        return Collections.unmodifiableList(sorted);
     }
 
     /**

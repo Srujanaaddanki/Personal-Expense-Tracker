@@ -49,7 +49,7 @@ public class Main {
         boolean running = true;
         while (running) {
             printMenu();
-            int choice = readMenuChoice(1, 9);
+            int choice = readMenuChoice(1, 11);
 
             switch (choice) {
                 case 1 -> handleAddExpense();
@@ -57,10 +57,12 @@ public class Main {
                 case 3 -> handleSearchExpenseById();
                 case 4 -> handleSearchExpensesByCategory();
                 case 5 -> handleFilterExpensesByDateRange();
-                case 6 -> handleUpdateExpense();
-                case 7 -> handleDeleteExpense();
-                case 8 -> handleCalculateTotalSpending();
-                case 9 -> {
+                case 6 -> handleSortExpensesByAmount();
+                case 7 -> handleSortExpensesByDate();
+                case 8 -> handleUpdateExpense();
+                case 9 -> handleDeleteExpense();
+                case 10 -> handleCalculateTotalSpending();
+                case 11 -> {
                     System.out.println("\nThank you for using Personal Expense Tracker. Goodbye!");
                     running = false;
                 }
@@ -76,11 +78,13 @@ public class Main {
         System.out.println("3. Search Expense by ID");
         System.out.println("4. Search Expenses by Category");
         System.out.println("5. Filter Expenses by Date Range");
-        System.out.println("6. Update an Expense");
-        System.out.println("7. Delete an Expense");
-        System.out.println("8. Calculate Total Spending");
-        System.out.println("9. Exit");
-        System.out.print("Please enter your choice (1-9): ");
+        System.out.println("6. Sort Expenses by Amount");
+        System.out.println("7. Sort Expenses by Date");
+        System.out.println("8. Update an Expense");
+        System.out.println("9. Delete an Expense");
+        System.out.println("10. Calculate Total Spending");
+        System.out.println("11. Exit");
+        System.out.print("Please enter your choice (1-11): ");
     }
 
     private void handleAddExpense() {
@@ -152,6 +156,48 @@ public class Main {
         } catch (IllegalArgumentException e) {
             System.out.println("\n[ERROR] " + e.getMessage());
         }
+    }
+
+    private void handleSortExpensesByAmount() {
+        System.out.println("\n--- Sort Expenses by Amount ---");
+        List<Expense> all = expenseService.getAllExpenses();
+        if (all.isEmpty()) {
+            System.out.println("No expenses recorded yet.");
+            return;
+        }
+
+        System.out.println("Select Direction:");
+        System.out.println("1. Ascending (Lowest to Highest)");
+        System.out.println("2. Descending (Highest to Lowest)");
+        System.out.print("Enter choice (1-2): ");
+        int direction = readMenuChoice(1, 2);
+
+        boolean ascending = (direction == 1);
+        List<Expense> sorted = expenseService.getExpensesSortedByAmount(ascending);
+        System.out.printf("\n[SORTED] %d expense(s) sorted by amount (%s):%n",
+                sorted.size(), ascending ? "Lowest to Highest" : "Highest to Lowest");
+        printExpenseTable(sorted);
+    }
+
+    private void handleSortExpensesByDate() {
+        System.out.println("\n--- Sort Expenses by Date ---");
+        List<Expense> all = expenseService.getAllExpenses();
+        if (all.isEmpty()) {
+            System.out.println("No expenses recorded yet.");
+            return;
+        }
+
+        System.out.println("Select Direction:");
+        System.out.println("1. Ascending (Oldest First)");
+        System.out.println("2. Descending (Newest First)");
+        System.out.print("Enter choice (1-2): ");
+        int direction = readMenuChoice(1, 2);
+
+        boolean ascending = (direction == 1);
+        List<Expense> sorted = expenseService.getExpensesSortedByDate(ascending);
+        System.out.printf("\n[SORTED] %d expense(s) sorted by date (%s):%n",
+                sorted.size(), ascending ? "Oldest First" : "Newest First");
+        printExpenseTable(sorted);
     }
 
     private void handleUpdateExpense() {

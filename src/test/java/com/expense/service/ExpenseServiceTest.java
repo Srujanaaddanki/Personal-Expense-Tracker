@@ -381,4 +381,182 @@ class ExpenseServiceTest {
         Expense stored = expenseService.getExpenseById(added.getId()).orElseThrow();
         assertEquals(new BigDecimal("14.00"), stored.getAmount(), "Stored amount must remain unchanged");
     }
+
+    // --- Sorting Tests (Milestone 3B) ---
+
+    @Test
+    @DisplayName("Sort by amount: Ascending orders from lowest to highest amount")
+    void testSortByAmountAscending() {
+        Expense e1 = expenseService.addExpense("Dinner", "Food", new BigDecimal("45.00"), LocalDate.now());
+        Expense e2 = expenseService.addExpense("Coffee", "Food", new BigDecimal("4.50"), LocalDate.now());
+        Expense e3 = expenseService.addExpense("Groceries", "Food", new BigDecimal("120.00"), LocalDate.now());
+
+        List<Expense> sorted = expenseService.getExpensesSortedByAmount(true);
+
+        assertEquals(3, sorted.size());
+        assertEquals(e2.getId(), sorted.get(0).getId());
+        assertEquals(e1.getId(), sorted.get(1).getId());
+        assertEquals(e3.getId(), sorted.get(2).getId());
+    }
+
+    @Test
+    @DisplayName("Sort by amount: Descending orders from highest to lowest amount")
+    void testSortByAmountDescending() {
+        Expense e1 = expenseService.addExpense("Dinner", "Food", new BigDecimal("45.00"), LocalDate.now());
+        Expense e2 = expenseService.addExpense("Coffee", "Food", new BigDecimal("4.50"), LocalDate.now());
+        Expense e3 = expenseService.addExpense("Groceries", "Food", new BigDecimal("120.00"), LocalDate.now());
+
+        List<Expense> sorted = expenseService.getExpensesSortedByAmount(false);
+
+        assertEquals(3, sorted.size());
+        assertEquals(e3.getId(), sorted.get(0).getId());
+        assertEquals(e1.getId(), sorted.get(1).getId());
+        assertEquals(e2.getId(), sorted.get(2).getId());
+    }
+
+    @Test
+    @DisplayName("Sort by amount: Ties in amount must break deterministically by ascending ID in BOTH directions")
+    void testSortByAmountTieBreaking() {
+        // Both have amount = $25.00
+        Expense e1 = expenseService.addExpense("Book A", "Education", new BigDecimal("25.00"), LocalDate.now());
+        Expense e2 = expenseService.addExpense("Book B", "Education", new BigDecimal("25.00"), LocalDate.now());
+        Expense cheap = expenseService.addExpense("Snack", "Food", new BigDecimal("5.00"), LocalDate.now());
+        Expense costly = expenseService.addExpense("Coat", "Clothing", new BigDecimal("100.00"), LocalDate.now());
+
+        // In ascending order: cheap ($5) -> e1 ($25, ID 1) -> e2 ($25, ID 2) -> costly ($100)
+        List<Expense> asc = expenseService.getExpensesSortedByAmount(true);
+        assertEquals(cheap.getId(), asc.get(0).getId());
+        assertEquals(e1.getId(), asc.get(1).getId(), "Ties must be broken by ascending ID");
+        assertEquals(e2.getId(), asc.get(2).getId(), "Ties must be broken by ascending ID");
+        assertEquals(costly.getId(), asc.get(3).getId());
+
+        // In descending order: costly ($100) -> e1 ($25, ID 1) -> e2 ($25, ID 2) -> cheap ($5)
+        // Notice: e1 (ID 1) must still appear BEFORE e2 (ID 2) because ID tie-breaker is NOT reversed
+        List<Expense> desc = expenseService.getExpensesSortedByAmount(false);
+        assertEquals(costly.getId(), desc.get(0).getId());
+        assertEquals(e1.getId(), desc.get(1).getId(), "Descending amount must STILL maintain ascending ID tie-breaker");
+        assertEquals(e2.getId(), desc.get(2).getId(), "Descending amount must STILL maintain ascending ID tie-breaker");
+        assertEquals(cheap.getId(), desc.get(3).getId());
+    }
+
+    @Test
+    @DisplayName("Sort by date: Ascending orders from oldest to newest date")
+    void testSortByDateAscending() {
+        Expense oct1 = expenseService.addExpense("Item 1", "Misc", new BigDecimal("10.00"), LocalDate.of(2026, 10, 1));
+        Expense oct15 = expenseService.addExpense("Item 2", "Misc", new BigDecimal("10.00"), LocalDate.of(2026, 10, 15));
+        Expense oct30 = expenseService.addExpense("Item 3", "Misc", new BigDecimal("10.00"), LocalDate.of(2026, 10, 30));
+
+        List<Expense> sorted = expenseService.getExpensesSortedByDate(true);
+
+        assertEquals(3, sorted.size());
+        assertEquals(oct1.getId(), sorted.get(0).getId());
+        assertEquals(oct15.getId(), sorted.get(1).getId());
+        assertEquals(oct30.getId(), sorted.get(2).getId());
+    }
+
+    @Test
+    @DisplayName("Sort by date: Descending orders from newest to oldest date")
+    void testSortByDateDescending() {
+        Expense oct1 = expenseService.addExpense("Item 1", "Misc", new BigDecimal("10.00"), LocalDate.of(2026, 10, 1));
+        Expense oct15 = expenseService.addExpense("Item 2", "Misc", new BigDecimal("10.00"), LocalDate.of(2026, 10, 15));
+        Expense oct30 = expenseService.addExpense("Item 3", "Misc", new BigDecimal("10.00"), LocalDate.of(2026, 10, 30));
+
+        List<Expense> sorted = expenseService.getExpensesSortedByDate(false);
+
+        assertEquals(3, sorted.size());
+        assertEquals(oct30.getId(), sorted.get(0).getId());
+        assertEquals(oct15.getId(), sorted.get(1).getId());
+        assertEquals(oct1.getId(), sorted.get(2).getId());
+    }
+
+    @Test
+    @DisplayName("Sort by date: Ties in date must break deterministically by ascending ID in BOTH directions")
+    void testSortByDateTieBreaking() {
+        LocalDate sameDate = LocalDate.of(2026, 10, 20);
+        Expense early = expenseService.addExpense("Early", "Misc", new BigDecimal("10.00"), LocalDate.of(2026, 10, 1));
+        Expense e1 = expenseService.addExpense("Same Day A", "Misc", new BigDecimal("10.00"), sameDate);
+        Expense e2 = expenseService.addExpense("Same Day B", "Misc", new BigDecimal("10.00"), sameDate);
+        Expense late = expenseService.addExpense("Late", "Misc", new BigDecimal("10.00"), LocalDate.of(2026, 10, 31));
+
+        // Ascending date: early -> e1 (ID 2) -> e2 (ID 3) -> late
+        List<Expense> asc = expenseService.getExpensesSortedByDate(true);
+        assertEquals(early.getId(), asc.get(0).getId());
+        assertEquals(e1.getId(), asc.get(1).getId());
+        assertEquals(e2.getId(), asc.get(2).getId());
+        assertEquals(late.getId(), asc.get(3).getId());
+
+        // Descending date: late -> e1 (ID 2) -> e2 (ID 3) -> early
+        // Notice: e1 (ID 2) must still precede e2 (ID 3)
+        List<Expense> desc = expenseService.getExpensesSortedByDate(false);
+        assertEquals(late.getId(), desc.get(0).getId());
+        assertEquals(e1.getId(), desc.get(1).getId(), "Descending date must maintain ascending ID tie-breaker");
+        assertEquals(e2.getId(), desc.get(2).getId(), "Descending date must maintain ascending ID tie-breaker");
+        assertEquals(early.getId(), desc.get(3).getId());
+    }
+
+    @Test
+    @DisplayName("Sort: Empty and single-element collections return safely without error")
+    void testSortEdgeCasesEmptyAndSingle() {
+        // Empty collection
+        assertTrue(expenseService.getExpensesSortedByAmount(true).isEmpty());
+        assertTrue(expenseService.getExpensesSortedByAmount(false).isEmpty());
+        assertTrue(expenseService.getExpensesSortedByDate(true).isEmpty());
+        assertTrue(expenseService.getExpensesSortedByDate(false).isEmpty());
+
+        // Single element
+        Expense single = expenseService.addExpense("One", "Only", new BigDecimal("1.00"), LocalDate.now());
+        assertEquals(1, expenseService.getExpensesSortedByAmount(true).size());
+        assertEquals(single.getId(), expenseService.getExpensesSortedByAmount(true).get(0).getId());
+        assertEquals(single.getId(), expenseService.getExpensesSortedByAmount(false).get(0).getId());
+        assertEquals(single.getId(), expenseService.getExpensesSortedByDate(true).get(0).getId());
+        assertEquals(single.getId(), expenseService.getExpensesSortedByDate(false).get(0).getId());
+    }
+
+    @Test
+    @DisplayName("Sort non-destructive: Sorting does NOT mutate internal insertion order")
+    void testSortNonDestructive() {
+        Expense first = expenseService.addExpense("High Amount First", "Misc", new BigDecimal("999.00"), LocalDate.of(2026, 12, 1));
+        Expense second = expenseService.addExpense("Low Amount Second", "Misc", new BigDecimal("1.00"), LocalDate.of(2026, 1, 1));
+
+        // Sort by amount ascending: second should be first
+        List<Expense> sortedAmount = expenseService.getExpensesSortedByAmount(true);
+        assertEquals(second.getId(), sortedAmount.get(0).getId());
+
+        // Sort by date ascending: second should be first
+        List<Expense> sortedDate = expenseService.getExpensesSortedByDate(true);
+        assertEquals(second.getId(), sortedDate.get(0).getId());
+
+        // Verify that internal storage preserved original insertion order (first followed by second)
+        List<Expense> stored = expenseService.getAllExpenses();
+        assertEquals(first.getId(), stored.get(0).getId(), "Internal store must remain in insertion order");
+        assertEquals(second.getId(), stored.get(1).getId(), "Internal store must remain in insertion order");
+    }
+
+    @Test
+    @DisplayName("Sort defensive copy: Mutating returned sorted elements does NOT alter stored data")
+    void testSortDefensiveCopy() {
+        Expense added = expenseService.addExpense("Book", "Education", new BigDecimal("35.00"), LocalDate.now());
+
+        List<Expense> sorted = expenseService.getExpensesSortedByAmount(true);
+        sorted.get(0).setAmount(new BigDecimal("9999.00"));
+
+        Expense stored = expenseService.getExpenseById(added.getId()).orElseThrow();
+        assertEquals(new BigDecimal("35.00"), stored.getAmount(), "Stored record must remain untouched");
+    }
+
+    @Test
+    @DisplayName("Sort unmodifiable: Attempting to add or remove from sorted lists throws UnsupportedOperationException")
+    void testSortUnmodifiableList() {
+        expenseService.addExpense("Item", "Misc", new BigDecimal("10.00"), LocalDate.now());
+
+        List<Expense> sortedAmount = expenseService.getExpensesSortedByAmount(true);
+        assertThrows(UnsupportedOperationException.class, () -> sortedAmount.remove(0));
+        assertThrows(UnsupportedOperationException.class, () ->
+                sortedAmount.add(new Expense(99L, "X", "Y", BigDecimal.ONE, LocalDate.now())));
+
+        List<Expense> sortedDate = expenseService.getExpensesSortedByDate(true);
+        assertThrows(UnsupportedOperationException.class, () -> sortedDate.remove(0));
+        assertThrows(UnsupportedOperationException.class, () ->
+                sortedDate.add(new Expense(99L, "X", "Y", BigDecimal.ONE, LocalDate.now())));
+    }
 }
