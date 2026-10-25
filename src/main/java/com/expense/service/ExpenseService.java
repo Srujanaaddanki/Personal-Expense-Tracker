@@ -1,20 +1,25 @@
 package com.expense.service;
 
+import com.expense.exception.PersistenceException;
 import com.expense.model.Expense;
+import com.expense.storage.CsvExpenseStorage;
 import com.expense.util.InputValidator;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
+import java.util.Set;
 
 /**
  * Service class handling core expense business logic.
@@ -35,17 +40,99 @@ public class ExpenseService {
 
     private final List<Expense> expenses;
     private long nextId;
+    private final CsvExpenseStorage storage;
+    private final Path dataFilePath;
 
     /**
-     * Initializes an empty in-memory expense service.
+     * Initializes an in-memory expense service without persistence.
      */
     public ExpenseService() {
+        this(null, null);
+    }
+
+    /**
+     * Initializes an expense service with automated CSV persistence.
+     *
+     * @param storage Storage handler for reading and writing CSV files
+     * @param dataFilePath Path to the target CSV persistence file
+     */
+    public ExpenseService(CsvExpenseStorage storage, Path dataFilePath) {
         this.expenses = new ArrayList<>();
         this.nextId = 1L;
+        this.storage = storage;
+        this.dataFilePath = dataFilePath;
+    }
+
+    /**
+     * Bulk loads a validated list of expenses into the service, preserving original IDs
+     * and safely updating the sequential ID counter to prevent future ID collisions.
+     *
+     * <p>Validates all entities upfront before mutating service state. If validation fails,
+     * existing in-memory expenses and counter remain completely untouched.
+     *
+     * @param loadedExpenses List of expenses to load
+     * @throws IllegalArgumentException if the list is null, contains null elements, duplicate IDs, or invalid fields
+     * @throws IllegalStateException if the maximum ID in the list reaches {@link Long#MAX_VALUE}
+     */
+    public void loadExpenses(List<Expense> loadedExpenses) {
+        if (loadedExpenses == null) {
+            throw new IllegalArgumentException("Loaded expenses list cannot be null.");
+        }
+
+        long maxId = 0L;
+        Set<Long> seenIds = new HashSet<>();
+        for (Expense e : loadedExpenses) {
+            if (e == null) {
+                throw new IllegalArgumentException("Loaded expense cannot be null.");
+            }
+            if (e.getId() == null || e.getId() <= 0) {
+                throw new IllegalArgumentException("Expense ID must be a positive number.");
+            }
+            if (!seenIds.add(e.getId())) {
+                throw new IllegalArgumentException("Duplicate expense ID found: " + e.getId());
+            }
+            InputValidator.validateDescription(e.getDescription());
+            InputValidator.validateCategory(e.getCategory());
+            InputValidator.validateAmount(e.getAmount());
+            InputValidator.validateDate(e.getDate());
+
+            if (e.getId() > maxId) {
+                maxId = e.getId();
+            }
+        }
+
+        if (maxId == Long.MAX_VALUE) {
+            throw new IllegalStateException("Expense ID limit reached (Long.MAX_VALUE). Cannot generate further IDs.");
+        }
+
+        this.expenses.clear();
+        for (Expense e : loadedExpenses) {
+            this.expenses.add(copyExpense(e));
+        }
+        this.nextId = maxId + 1;
+    }
+
+    /**
+     * Loads existing expenses from the configured storage file if persistence is enabled.
+     *
+     * @throws PersistenceException if loading fails due to corrupt syntax or I/O failure
+     */
+    public void loadFromStorage() {
+        if (isPersistenceEnabled()) {
+            try {
+                List<Expense> loaded = storage.loadExpenses(dataFilePath);
+                loadExpenses(loaded);
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                throw new PersistenceException("Failed to load expenses from storage: " + e.getMessage(), e);
+            }
+        }
     }
 
     /**
      * Creates and records a new expense with an auto-incremented ID.
+     *
+     * <p>If persistence is enabled, the new expense is persisted immediately.
+     * If persistence fails, the in-memory state is rolled back to prevent inconsistency.
      *
      * @param description Brief description of the expense
      * @param category    Expense category
@@ -53,6 +140,8 @@ public class ExpenseService {
      * @param date        Date the expense was incurred
      * @return A detached {@link Expense} copy with an assigned ID
      * @throws IllegalArgumentException if any field is invalid
+     * @throws IllegalStateException if nextId has reached {@link Long#MAX_VALUE}
+     * @throws PersistenceException if persistence fails
      */
     public Expense addExpense(String description, String category, BigDecimal amount, LocalDate date) {
         InputValidator.validateDescription(description);
@@ -60,8 +149,26 @@ public class ExpenseService {
         InputValidator.validateAmount(amount);
         InputValidator.validateDate(date);
 
-        Expense expense = new Expense(nextId++, description.trim(), category.trim(), amount, date);
+        if (nextId == Long.MAX_VALUE) {
+            throw new IllegalStateException("Expense ID limit reached (Long.MAX_VALUE). Cannot add more expenses.");
+        }
+
+        long allocatedId = nextId;
+        Expense expense = new Expense(allocatedId, description.trim(), category.trim(), amount, date);
         expenses.add(expense);
+        nextId++;
+
+        if (isPersistenceEnabled()) {
+            try {
+                storage.saveExpenses(this.expenses, dataFilePath);
+            } catch (PersistenceException e) {
+                // Transactional rollback: revert in-memory addition and restore ID counter
+                expenses.remove(expenses.size() - 1);
+                nextId = allocatedId;
+                throw e;
+            }
+        }
+
         return copyExpense(expense);
     }
 
@@ -301,6 +408,9 @@ public class ExpenseService {
     /**
      * Updates an existing expense by ID.
      *
+     * <p>If persistence is enabled, changes are persisted immediately.
+     * If persistence fails, changes are rolled back in memory to preserve consistency.
+     *
      * @param id          ID of the expense to update
      * @param description New description
      * @param category    New category
@@ -308,6 +418,7 @@ public class ExpenseService {
      * @param date        New date
      * @return An {@link Optional} containing a detached copy of the updated Expense, or empty if ID does not exist
      * @throws IllegalArgumentException if any argument is invalid
+     * @throws PersistenceException if persistence fails
      */
     public Optional<Expense> updateExpense(Long id, String description, String category, BigDecimal amount, LocalDate date) {
         InputValidator.validateId(id);
@@ -322,10 +433,28 @@ public class ExpenseService {
         }
 
         Expense existing = existingOpt.get();
+        String prevDesc = existing.getDescription();
+        String prevCat = existing.getCategory();
+        BigDecimal prevAmount = existing.getAmount();
+        LocalDate prevDate = existing.getDate();
+
         existing.setDescription(description.trim());
         existing.setCategory(category.trim());
         existing.setAmount(amount);
         existing.setDate(date);
+
+        if (isPersistenceEnabled()) {
+            try {
+                storage.saveExpenses(this.expenses, dataFilePath);
+            } catch (PersistenceException e) {
+                // Transactional rollback: restore original values on failure
+                existing.setDescription(prevDesc);
+                existing.setCategory(prevCat);
+                existing.setAmount(prevAmount);
+                existing.setDate(prevDate);
+                throw e;
+            }
+        }
 
         return Optional.of(copyExpense(existing));
     }
@@ -334,17 +463,28 @@ public class ExpenseService {
      * Deletes an expense by its ID.
      * 
      * <p>Time Complexity: \(O(N)\) to find and remove the element from the ArrayList.
+     * <p>If persistence is enabled and fails, the deleted entity is restored in memory.
      *
      * @param id ID of the expense to delete
      * @return {@code true} if an expense was found and removed; {@code false} otherwise
      * @throws IllegalArgumentException if the ID is null or non-positive
+     * @throws PersistenceException if persistence fails
      */
     public boolean deleteExpense(Long id) {
         InputValidator.validateId(id);
 
         for (int i = 0; i < expenses.size(); i++) {
             if (expenses.get(i).getId().equals(id)) {
-                expenses.remove(i);
+                Expense removed = expenses.remove(i);
+                if (isPersistenceEnabled()) {
+                    try {
+                        storage.saveExpenses(this.expenses, dataFilePath);
+                    } catch (PersistenceException e) {
+                        // Transactional rollback: re-insert removed entity at original index
+                        expenses.add(i, removed);
+                        throw e;
+                    }
+                }
                 return true;
             }
         }
@@ -454,6 +594,24 @@ public class ExpenseService {
      */
     public int getExpenseCount() {
         return expenses.size();
+    }
+
+    /**
+     * Checks if automated CSV persistence is active for this service instance.
+     *
+     * @return {@code true} if storage and dataFilePath are configured; {@code false} otherwise
+     */
+    public boolean isPersistenceEnabled() {
+        return storage != null && dataFilePath != null;
+    }
+
+    /**
+     * Gets the configured target CSV file path.
+     *
+     * @return Target file path, or {@code null} if running in in-memory mode
+     */
+    public Path getDataFilePath() {
+        return dataFilePath;
     }
 
     // --- Private Helper Methods ---

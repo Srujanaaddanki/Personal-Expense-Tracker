@@ -1,10 +1,13 @@
 package com.expense;
 
+import com.expense.exception.PersistenceException;
 import com.expense.model.Expense;
 import com.expense.service.ExpenseService;
+import com.expense.storage.CsvExpenseStorage;
 import com.expense.util.InputValidator;
 
 import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +31,8 @@ public class Main {
     private final ExpenseService expenseService;
     private final Scanner scanner;
 
+    public static final Path DEFAULT_DATA_PATH = Path.of("data", "expenses.csv");
+
     public Main(Scanner scanner, ExpenseService expenseService) {
         this.scanner = scanner;
         this.expenseService = expenseService;
@@ -35,7 +40,8 @@ public class Main {
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
-        ExpenseService service = new ExpenseService();
+        CsvExpenseStorage storage = new CsvExpenseStorage();
+        ExpenseService service = new ExpenseService(storage, DEFAULT_DATA_PATH);
         Main app = new Main(scanner, service);
         app.run();
     }
@@ -47,6 +53,24 @@ public class Main {
         System.out.println("==================================================");
         System.out.println("       PERSONAL EXPENSE TRACKER (STAGE A)");
         System.out.println("==================================================");
+
+        if (expenseService.isPersistenceEnabled()) {
+            try {
+                expenseService.loadFromStorage();
+                int loadedCount = expenseService.getExpenseCount();
+                if (loadedCount > 0) {
+                    System.out.printf("[INFO] Loaded %d existing expense(s) from '%s'.%n",
+                            loadedCount, expenseService.getDataFilePath());
+                } else {
+                    System.out.printf("[INFO] No existing expense data found at '%s'. A new file will be created on first save.%n",
+                            expenseService.getDataFilePath());
+                }
+            } catch (PersistenceException e) {
+                System.out.println("\n[ERROR] Failed to load data file: " + e.getMessage());
+                System.out.println("[WARNING] To prevent data loss, the corrupted file has NOT been overwritten.");
+                System.out.println("[WARNING] Starting with an empty tracker in memory.\n");
+            }
+        }
 
         boolean running = true;
         while (running) {
@@ -104,7 +128,7 @@ public class Main {
             Expense created = expenseService.addExpense(description, category, amount, date);
             System.out.println("\n[SUCCESS] Expense recorded successfully!");
             printExpenseRow(created);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IllegalStateException | PersistenceException e) {
             System.out.println("\n[ERROR] Failed to add expense: " + e.getMessage());
         }
     }
@@ -230,7 +254,7 @@ public class Main {
                 System.out.println("\n[SUCCESS] Expense updated successfully!");
                 printExpenseRow(updated.get());
             }
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IllegalStateException | PersistenceException e) {
             System.out.println("\n[ERROR] Failed to update expense: " + e.getMessage());
         }
     }
@@ -239,11 +263,15 @@ public class Main {
         System.out.println("\n--- Delete an Expense ---");
         long id = readPositiveLong("Enter Expense ID to delete: ");
 
-        boolean deleted = expenseService.deleteExpense(id);
-        if (deleted) {
-            System.out.println("\n[SUCCESS] Expense with ID " + id + " was deleted.");
-        } else {
-            System.out.println("\n[NOT FOUND] No expense exists with ID: " + id);
+        try {
+            boolean deleted = expenseService.deleteExpense(id);
+            if (deleted) {
+                System.out.println("\n[SUCCESS] Expense with ID " + id + " was deleted.");
+            } else {
+                System.out.println("\n[NOT FOUND] No expense exists with ID: " + id);
+            }
+        } catch (IllegalArgumentException | PersistenceException e) {
+            System.out.println("\n[ERROR] Failed to delete expense: " + e.getMessage());
         }
     }
 

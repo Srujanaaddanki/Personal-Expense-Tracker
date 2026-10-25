@@ -1,11 +1,14 @@
 package com.expense.service;
 
+import com.expense.exception.PersistenceException;
 import com.expense.model.Expense;
+import com.expense.storage.CsvExpenseStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -898,5 +901,164 @@ class ExpenseServiceTest {
         assertThrows(UnsupportedOperationException.class, () -> top1.remove(0));
         assertThrows(UnsupportedOperationException.class, () ->
                 top1.add(new Expense(99L, "Hack", "Evil", BigDecimal.ONE, LocalDate.now())));
+    }
+
+    // --- Milestone 4A Persistence & Consistency Tests ---
+
+    @Test
+    @DisplayName("Load expenses: Preserves loaded IDs and sets nextId strictly above max ID")
+    void testLoadExpensesPreservesIdsAndAdvancesCounter() {
+        Expense e1 = new Expense(5L, "Lunch", "Food", new BigDecimal("12.00"), LocalDate.now());
+        Expense e2 = new Expense(19L, "Monitor", "Electronics", new BigDecimal("250.00"), LocalDate.now());
+
+        expenseService.loadExpenses(List.of(e1, e2));
+
+        assertEquals(2, expenseService.getExpenseCount());
+        assertTrue(expenseService.getExpenseById(5L).isPresent());
+        assertTrue(expenseService.getExpenseById(19L).isPresent());
+
+        // Next added expense must receive ID = 20 (maxId + 1)
+        Expense e3 = expenseService.addExpense("Snack", "Food", new BigDecimal("3.00"), LocalDate.now());
+        assertEquals(20L, e3.getId());
+    }
+
+    @Test
+    @DisplayName("Load expenses: Rejects null list or non-positive IDs")
+    void testLoadExpensesValidationFailures() {
+        assertThrows(IllegalArgumentException.class, () -> expenseService.loadExpenses(null));
+
+        Expense invalidId = new Expense(-1L, "Invalid", "Misc", BigDecimal.TEN, LocalDate.now());
+        assertThrows(IllegalArgumentException.class, () -> expenseService.loadExpenses(List.of(invalidId)));
+    }
+
+    @Test
+    @DisplayName("Load expenses: Rejects duplicate IDs in loaded list and preserves existing state")
+    void testLoadExpensesRejectsDuplicateIdsAndPreservesState() {
+        Expense initial = expenseService.addExpense("KeepMe", "General", BigDecimal.ONE, LocalDate.now());
+
+        Expense e1 = new Expense(10L, "Item 1", "Misc", BigDecimal.TEN, LocalDate.now());
+        Expense e2 = new Expense(10L, "Item 2", "Misc", BigDecimal.TEN, LocalDate.now());
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                expenseService.loadExpenses(List.of(e1, e2)));
+        assertTrue(ex.getMessage().contains("Duplicate expense ID found"));
+
+        // Existing state must remain untouched
+        assertEquals(1, expenseService.getExpenseCount());
+        assertEquals("KeepMe", expenseService.getExpenseById(initial.getId()).orElseThrow().getDescription());
+    }
+
+    @Test
+    @DisplayName("Load expenses: Rejects invalid fields or null elements in loaded list")
+    void testLoadExpensesRejectsInvalidFields() {
+        Expense nullElement = null;
+        assertThrows(IllegalArgumentException.class, () ->
+                expenseService.loadExpenses(java.util.Collections.singletonList(nullElement)));
+
+        Expense invalidAmount = new Expense(1L, "Item", "Misc", BigDecimal.ZERO, LocalDate.now());
+        assertThrows(IllegalArgumentException.class, () ->
+                expenseService.loadExpenses(List.of(invalidAmount)));
+
+        Expense blankCategory = new Expense(1L, "Item", "   ", BigDecimal.TEN, LocalDate.now());
+        assertThrows(IllegalArgumentException.class, () ->
+                expenseService.loadExpenses(List.of(blankCategory)));
+    }
+
+    @Test
+    @DisplayName("Load from storage: Wraps validation exceptions in PersistenceException")
+    void testLoadFromStorageWrapsValidationExceptions() {
+        CsvExpenseStorage duplicateReturningStorage = new CsvExpenseStorage() {
+            @Override
+            public List<Expense> loadExpenses(Path path) {
+                return List.of(
+                        new Expense(1L, "Item 1", "Cat", BigDecimal.TEN, LocalDate.now()),
+                        new Expense(1L, "Item 2", "Cat", BigDecimal.TEN, LocalDate.now())
+                );
+            }
+        };
+
+        ExpenseService service = new ExpenseService(duplicateReturningStorage, Path.of("dummy.csv"));
+        PersistenceException ex = assertThrows(PersistenceException.class, service::loadFromStorage);
+        assertTrue(ex.getMessage().contains("Failed to load expenses from storage"));
+    }
+
+    @Test
+    @DisplayName("Load expenses: Detects Long.MAX_VALUE and explicitly prevents overflow")
+    void testLoadExpensesMaxIdOverflow() {
+        Expense maxExpense = new Expense(Long.MAX_VALUE, "Extreme", "Misc", BigDecimal.ONE, LocalDate.now());
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+                expenseService.loadExpenses(List.of(maxExpense)));
+        assertTrue(ex.getMessage().contains("Long.MAX_VALUE"));
+    }
+
+    @Test
+    @DisplayName("Add expense: Throws IllegalStateException when nextId reaches Long.MAX_VALUE without overflowing")
+    void testAddExpenseIdLimitReached() {
+        Expense nearMaxExpense = new Expense(Long.MAX_VALUE - 1, "Near Max", "Misc", BigDecimal.ONE, LocalDate.now());
+        expenseService.loadExpenses(List.of(nearMaxExpense));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+                expenseService.addExpense("Overflowing", "Misc", BigDecimal.ONE, LocalDate.now()));
+        assertTrue(ex.getMessage().contains("Long.MAX_VALUE"));
+    }
+
+    @Test
+    @DisplayName("Add expense consistency: Rolls back in-memory state and ID counter when save fails")
+    void testAddExpenseRollbackOnSaveFailure() {
+        ExpenseService failingService = new ExpenseService(new FailingCsvExpenseStorage(), Path.of("dummy.csv"));
+
+        PersistenceException ex = assertThrows(PersistenceException.class, () ->
+                failingService.addExpense("Item", "Category", BigDecimal.TEN, LocalDate.now()));
+        assertTrue(ex.getMessage().contains("Simulated disk write failure"));
+
+        // Memory must remain empty after failed add
+        assertEquals(0, failingService.getExpenseCount());
+        assertTrue(failingService.getAllExpenses().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Update expense consistency: Restores previous in-memory values when save fails")
+    void testUpdateExpenseRollbackOnSaveFailure() {
+        ExpenseService failingService = new ExpenseService(new FailingCsvExpenseStorage(), Path.of("dummy.csv"));
+        Expense initial = new Expense(1L, "Original Title", "Original Cat", new BigDecimal("50.00"), LocalDate.now());
+        failingService.loadExpenses(List.of(initial));
+
+        PersistenceException ex = assertThrows(PersistenceException.class, () ->
+                failingService.updateExpense(1L, "New Title", "New Cat", new BigDecimal("99.00"), LocalDate.now()));
+        assertTrue(ex.getMessage().contains("Simulated disk write failure"));
+
+        // Memory must retain original values
+        Expense current = failingService.getExpenseById(1L).orElseThrow();
+        assertEquals("Original Title", current.getDescription());
+        assertEquals("Original Cat", current.getCategory());
+        assertEquals(new BigDecimal("50.00"), current.getAmount());
+    }
+
+    @Test
+    @DisplayName("Delete expense consistency: Restores deleted item at original position when save fails")
+    void testDeleteExpenseRollbackOnSaveFailure() {
+        ExpenseService failingService = new ExpenseService(new FailingCsvExpenseStorage(), Path.of("dummy.csv"));
+        Expense e1 = new Expense(1L, "First", "Misc", BigDecimal.ONE, LocalDate.now());
+        Expense e2 = new Expense(2L, "Second", "Misc", BigDecimal.TEN, LocalDate.now());
+        failingService.loadExpenses(List.of(e1, e2));
+
+        PersistenceException ex = assertThrows(PersistenceException.class, () ->
+                failingService.deleteExpense(1L));
+        assertTrue(ex.getMessage().contains("Simulated disk write failure"));
+
+        // Memory must retain both expenses in original order
+        assertEquals(2, failingService.getExpenseCount());
+        List<Expense> all = failingService.getAllExpenses();
+        assertEquals(1L, all.get(0).getId());
+        assertEquals(2L, all.get(1).getId());
+    }
+
+    // Stub for testing transactional persistence failures
+    private static class FailingCsvExpenseStorage extends CsvExpenseStorage {
+        @Override
+        public void saveExpenses(List<Expense> expenses, Path targetPath) {
+            throw new PersistenceException("Simulated disk write failure");
+        }
     }
 }
