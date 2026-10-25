@@ -59,6 +59,25 @@ class InputValidatorTest {
     }
 
     @Test
+    @DisplayName("Should accept valid date range and reject null or inverted boundaries")
+    void testValidateDateRange() {
+        LocalDate start = LocalDate.of(2026, 10, 1);
+        LocalDate end = LocalDate.of(2026, 10, 31);
+
+        // Valid ranges
+        assertDoesNotThrow(() -> InputValidator.validateDateRange(start, end));
+        assertDoesNotThrow(() -> InputValidator.validateDateRange(start, start), "Same day start and end is valid");
+
+        // Null checks
+        assertThrows(IllegalArgumentException.class, () -> InputValidator.validateDateRange(null, end));
+        assertThrows(IllegalArgumentException.class, () -> InputValidator.validateDateRange(start, null));
+
+        // Start after end
+        assertThrows(IllegalArgumentException.class, () -> InputValidator.validateDateRange(end, start),
+                "Start date after end date must throw IllegalArgumentException");
+    }
+
+    @Test
     @DisplayName("Should parse valid amount string and reject malformed/non-positive")
     void testParseAmount() {
         assertEquals(new BigDecimal("45.50"), InputValidator.parseAmount("45.50"));

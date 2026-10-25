@@ -69,6 +69,25 @@ public final class InputValidator {
     }
 
     /**
+     * Validates an inclusive date range.
+     *
+     * @param startDate Starting boundary date
+     * @param endDate   Ending boundary date
+     * @throws IllegalArgumentException if either date is null or if startDate is after endDate
+     */
+    public static void validateDateRange(LocalDate startDate, LocalDate endDate) {
+        if (startDate == null) {
+            throw new IllegalArgumentException("Start date cannot be null.");
+        }
+        if (endDate == null) {
+            throw new IllegalArgumentException("End date cannot be null.");
+        }
+        if (startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("Start date cannot be after end date.");
+        }
+    }
+
+    /**
      * Validates an expense ID.
      *
      * @param id Identifier to validate

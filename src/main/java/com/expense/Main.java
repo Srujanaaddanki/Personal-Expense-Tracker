@@ -49,16 +49,18 @@ public class Main {
         boolean running = true;
         while (running) {
             printMenu();
-            int choice = readMenuChoice(1, 7);
+            int choice = readMenuChoice(1, 9);
 
             switch (choice) {
                 case 1 -> handleAddExpense();
                 case 2 -> handleViewAllExpenses();
                 case 3 -> handleSearchExpenseById();
-                case 4 -> handleUpdateExpense();
-                case 5 -> handleDeleteExpense();
-                case 6 -> handleCalculateTotalSpending();
-                case 7 -> {
+                case 4 -> handleSearchExpensesByCategory();
+                case 5 -> handleFilterExpensesByDateRange();
+                case 6 -> handleUpdateExpense();
+                case 7 -> handleDeleteExpense();
+                case 8 -> handleCalculateTotalSpending();
+                case 9 -> {
                     System.out.println("\nThank you for using Personal Expense Tracker. Goodbye!");
                     running = false;
                 }
@@ -72,11 +74,13 @@ public class Main {
         System.out.println("1. Add an Expense");
         System.out.println("2. View All Expenses");
         System.out.println("3. Search Expense by ID");
-        System.out.println("4. Update an Expense");
-        System.out.println("5. Delete an Expense");
-        System.out.println("6. Calculate Total Spending");
-        System.out.println("7. Exit");
-        System.out.print("Please enter your choice (1-7): ");
+        System.out.println("4. Search Expenses by Category");
+        System.out.println("5. Filter Expenses by Date Range");
+        System.out.println("6. Update an Expense");
+        System.out.println("7. Delete an Expense");
+        System.out.println("8. Calculate Total Spending");
+        System.out.println("9. Exit");
+        System.out.print("Please enter your choice (1-9): ");
     }
 
     private void handleAddExpense() {
@@ -116,6 +120,37 @@ public class Main {
             printExpenseTable(List.of(found.get()));
         } else {
             System.out.println("\n[NOT FOUND] No expense exists with ID: " + id);
+        }
+    }
+
+    private void handleSearchExpensesByCategory() {
+        System.out.println("\n--- Search Expenses by Category ---");
+        String category = readNonBlankString("Enter Category to search (e.g. Food): ");
+        List<Expense> matches = expenseService.getExpensesByCategory(category);
+
+        if (matches.isEmpty()) {
+            System.out.printf("\n[NOT FOUND] No expenses found in category: '%s'%n", category);
+        } else {
+            System.out.printf("\n[FOUND] %d expense(s) in category '%s':%n", matches.size(), category);
+            printExpenseTable(matches);
+        }
+    }
+
+    private void handleFilterExpensesByDateRange() {
+        System.out.println("\n--- Filter Expenses by Date Range ---");
+        LocalDate startDate = readValidDate("Enter Start Date (YYYY-MM-DD): ", false);
+        LocalDate endDate = readValidDate("Enter End Date (YYYY-MM-DD): ", false);
+
+        try {
+            List<Expense> matches = expenseService.getExpensesByDateRange(startDate, endDate);
+            if (matches.isEmpty()) {
+                System.out.printf("\n[NOT FOUND] No expenses found between %s and %s.%n", startDate, endDate);
+            } else {
+                System.out.printf("\n[FOUND] %d expense(s) between %s and %s:%n", matches.size(), startDate, endDate);
+                printExpenseTable(matches);
+            }
+        } catch (IllegalArgumentException e) {
+            System.out.println("\n[ERROR] " + e.getMessage());
         }
     }
 

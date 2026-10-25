@@ -88,6 +88,68 @@ public class ExpenseService {
     }
 
     /**
+     * Searches expenses by category (case-insensitive).
+     *
+     * <p><b>DSA Analysis:</b>
+     * <ul>
+     *   <li><b>Problem:</b> Locate all expenses belonging to a specified category.</li>
+     *   <li><b>Algorithm:</b> Single-pass linear scan filtering through the {@link ArrayList}.
+     *       We compare normalized strings using {@link String#equalsIgnoreCase(String)}.</li>
+     *   <li><b>Time Complexity:</b> \(O(N)\) where \(N\) is the number of expenses.
+     *       We inspect each element exactly once.</li>
+     *   <li><b>Space Complexity:</b> \(O(M)\) where \(M\) is the number of matching items (\(M \le N\)),
+     *       allocating a new list with detached copies to preserve encapsulation.</li>
+     * </ul>
+     *
+     * @param category Category name to search for
+     * @return Unmodifiable list containing detached copies of matching expenses (or empty list if none match)
+     * @throws IllegalArgumentException if category is null or blank
+     */
+    public List<Expense> getExpensesByCategory(String category) {
+        InputValidator.validateCategory(category);
+        String normalized = category.trim();
+
+        List<Expense> matches = new ArrayList<>();
+        for (Expense expense : expenses) {
+            if (expense.getCategory().equalsIgnoreCase(normalized)) {
+                matches.add(copyExpense(expense));
+            }
+        }
+        return Collections.unmodifiableList(matches);
+    }
+
+    /**
+     * Filters expenses within an inclusive date range [startDate, endDate].
+     *
+     * <p><b>DSA Analysis:</b>
+     * <ul>
+     *   <li><b>Problem:</b> Select all records whose date falls on or between two calendar dates.</li>
+     *   <li><b>Algorithm:</b> Single-pass linear filter. A date \(d\) satisfies the range if:
+     *       \(\neg (d < \text{startDate}) \land \neg (d > \text{endDate})\).
+     *       In modern Java Date API: {@code !d.isBefore(startDate) && !d.isAfter(endDate)}.</li>
+     *   <li><b>Time Complexity:</b> \(O(N)\) where \(N\) is the total number of expenses.</li>
+     *   <li><b>Space Complexity:</b> \(O(M)\) where \(M\) is the count of matching expenses.</li>
+     * </ul>
+     *
+     * @param startDate Starting boundary (inclusive)
+     * @param endDate   Ending boundary (inclusive)
+     * @return Unmodifiable list containing detached copies of matching expenses
+     * @throws IllegalArgumentException if either date is null or if startDate is after endDate
+     */
+    public List<Expense> getExpensesByDateRange(LocalDate startDate, LocalDate endDate) {
+        InputValidator.validateDateRange(startDate, endDate);
+
+        List<Expense> matches = new ArrayList<>();
+        for (Expense expense : expenses) {
+            LocalDate d = expense.getDate();
+            if (!d.isBefore(startDate) && !d.isAfter(endDate)) {
+                matches.add(copyExpense(expense));
+            }
+        }
+        return Collections.unmodifiableList(matches);
+    }
+
+    /**
      * Updates an existing expense by ID.
      *
      * @param id          ID of the expense to update

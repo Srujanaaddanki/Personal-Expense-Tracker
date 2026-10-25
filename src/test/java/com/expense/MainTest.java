@@ -16,20 +16,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MainTest {
 
     @Test
-    @DisplayName("Should simulate adding an expense, calculating total, and exiting without error")
+    @DisplayName("Should simulate adding an expense, searching by category, filtering by date, and exiting")
     void testMainConsoleFlow() {
         // Simulated inputs:
         // 1 (Add Expense) -> "Textbook" -> "Education" -> "50.00" -> "2026-10-25"
-        // 6 (Calculate Total)
-        // 7 (Exit)
+        // 4 (Search by Category) -> "Education"
+        // 5 (Filter by Date Range) -> "2026-10-01" -> "2026-10-31"
+        // 8 (Calculate Total)
+        // 9 (Exit)
         String simulatedInput = String.join(System.lineSeparator(),
                 "1",
                 "Textbook",
                 "Education",
                 "50.00",
                 "2026-10-25",
-                "6",
-                "7"
+                "4",
+                "Education",
+                "5",
+                "2026-10-01",
+                "2026-10-31",
+                "8",
+                "9"
         ) + System.lineSeparator();
 
         ByteArrayInputStream in = new ByteArrayInputStream(simulatedInput.getBytes(StandardCharsets.UTF_8));
@@ -48,6 +55,8 @@ class MainTest {
 
         String output = out.toString(StandardCharsets.UTF_8);
         assertTrue(output.contains("Expense recorded successfully!"));
+        assertTrue(output.contains("[FOUND] 1 expense(s) in category 'Education':"));
+        assertTrue(output.contains("[FOUND] 1 expense(s) between 2026-10-01 and 2026-10-31:"));
         assertTrue(output.contains("Total Amount Spent:      $50.00"));
         assertTrue(output.contains("Thank you for using Personal Expense Tracker. Goodbye!"));
     }
@@ -58,11 +67,11 @@ class MainTest {
         // Simulated inputs:
         // "abc" (invalid menu number)
         // "99" (out-of-range menu number)
-        // "7" (Exit)
+        // "9" (Exit)
         String simulatedInput = String.join(System.lineSeparator(),
                 "abc",
                 "99",
-                "7"
+                "9"
         ) + System.lineSeparator();
 
         ByteArrayInputStream in = new ByteArrayInputStream(simulatedInput.getBytes(StandardCharsets.UTF_8));
@@ -80,8 +89,8 @@ class MainTest {
         }
 
         String output = out.toString(StandardCharsets.UTF_8);
-        assertTrue(output.contains("Invalid input 'abc'. Please enter a valid number (1-7):"));
-        assertTrue(output.contains("Please enter a number between 1 and 7:"));
+        assertTrue(output.contains("Invalid input 'abc'. Please enter a valid number (1-9):"));
+        assertTrue(output.contains("Please enter a number between 1 and 9:"));
         assertTrue(output.contains("Thank you for using Personal Expense Tracker. Goodbye!"));
     }
 }

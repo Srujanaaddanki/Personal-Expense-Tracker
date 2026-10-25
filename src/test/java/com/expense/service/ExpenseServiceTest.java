@@ -254,4 +254,131 @@ class ExpenseServiceTest {
         BigDecimal total = expenseService.calculateTotalSpending();
         assertEquals(new BigDecimal("110.00"), total);
     }
+
+    // --- Category Search Tests (Milestone 3A) ---
+
+    @Test
+    @DisplayName("Category search: Should find matching expenses case-insensitively")
+    void testGetExpensesByCategoryMatches() {
+        expenseService.addExpense("Burger", "Food", new BigDecimal("12.00"), LocalDate.now());
+        expenseService.addExpense("Bus", "Transport", new BigDecimal("3.00"), LocalDate.now());
+        expenseService.addExpense("Pizza", "FOOD", new BigDecimal("15.00"), LocalDate.now());
+        expenseService.addExpense("Salad", "food", new BigDecimal("8.00"), LocalDate.now());
+
+        List<Expense> foodMatches = expenseService.getExpensesByCategory("Food");
+        assertEquals(3, foodMatches.size());
+
+        List<Expense> transportMatches = expenseService.getExpensesByCategory("transport");
+        assertEquals(1, transportMatches.size());
+        assertEquals("Bus", transportMatches.get(0).getDescription());
+    }
+
+    @Test
+    @DisplayName("Category search: Should return empty list when no matches exist or on empty collection")
+    void testGetExpensesByCategoryNoMatches() {
+        // Empty collection
+        assertTrue(expenseService.getExpensesByCategory("Food").isEmpty());
+
+        // Non-empty collection, nonexistent category
+        expenseService.addExpense("Movie", "Entertainment", new BigDecimal("15.00"), LocalDate.now());
+        List<Expense> matches = expenseService.getExpensesByCategory("Health");
+        assertNotNull(matches);
+        assertTrue(matches.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Category search: Should reject null or blank category")
+    void testGetExpensesByCategoryInvalidInput() {
+        assertThrows(IllegalArgumentException.class, () -> expenseService.getExpensesByCategory(null));
+        assertThrows(IllegalArgumentException.class, () -> expenseService.getExpensesByCategory(""));
+        assertThrows(IllegalArgumentException.class, () -> expenseService.getExpensesByCategory("   "));
+    }
+
+    @Test
+    @DisplayName("Category search: Should return detached copies to preserve encapsulation")
+    void testGetExpensesByCategoryDefensiveCopy() {
+        Expense added = expenseService.addExpense("Book", "Education", new BigDecimal("25.00"), LocalDate.now());
+
+        List<Expense> matches = expenseService.getExpensesByCategory("Education");
+        matches.get(0).setAmount(new BigDecimal("999.00"));
+
+        Expense stored = expenseService.getExpenseById(added.getId()).orElseThrow();
+        assertEquals(new BigDecimal("25.00"), stored.getAmount(), "Stored amount must not be altered by mutating search result");
+    }
+
+    // --- Date-Range Filtering Tests (Milestone 3A) ---
+
+    @Test
+    @DisplayName("Date range: Should filter expenses inclusively between start and end dates")
+    void testGetExpensesByDateRangeInclusive() {
+        LocalDate oct10 = LocalDate.of(2026, 10, 10);
+        LocalDate oct15 = LocalDate.of(2026, 10, 15);
+        LocalDate oct20 = LocalDate.of(2026, 10, 20);
+        LocalDate oct25 = LocalDate.of(2026, 10, 25);
+        LocalDate oct30 = LocalDate.of(2026, 10, 30);
+
+        expenseService.addExpense("Before range", "Misc", new BigDecimal("5.00"), oct10);
+        Expense boundaryStart = expenseService.addExpense("On start date", "Misc", new BigDecimal("10.00"), oct15);
+        Expense middle = expenseService.addExpense("In middle", "Misc", new BigDecimal("20.00"), oct20);
+        Expense boundaryEnd = expenseService.addExpense("On end date", "Misc", new BigDecimal("30.00"), oct25);
+        expenseService.addExpense("After range", "Misc", new BigDecimal("40.00"), oct30);
+
+        List<Expense> results = expenseService.getExpensesByDateRange(oct15, oct25);
+
+        assertEquals(3, results.size(), "Must include boundary start, middle, and boundary end");
+        assertTrue(results.contains(boundaryStart));
+        assertTrue(results.contains(middle));
+        assertTrue(results.contains(boundaryEnd));
+    }
+
+    @Test
+    @DisplayName("Date range: Single-day range (start == end) matches only expenses on that specific date")
+    void testGetExpensesByDateRangeSingleDay() {
+        LocalDate day = LocalDate.of(2026, 10, 20);
+        expenseService.addExpense("Day expense 1", "Food", new BigDecimal("10.00"), day);
+        expenseService.addExpense("Day expense 2", "Coffee", new BigDecimal("4.00"), day);
+        expenseService.addExpense("Other day", "Transport", new BigDecimal("15.00"), day.plusDays(1));
+
+        List<Expense> results = expenseService.getExpensesByDateRange(day, day);
+        assertEquals(2, results.size());
+    }
+
+    @Test
+    @DisplayName("Date range: Should return empty list when no expenses fall in range or on empty collection")
+    void testGetExpensesByDateRangeNoMatches() {
+        // Empty collection
+        LocalDate oct1 = LocalDate.of(2026, 10, 1);
+        LocalDate oct31 = LocalDate.of(2026, 10, 31);
+        assertTrue(expenseService.getExpensesByDateRange(oct1, oct31).isEmpty());
+
+        // Expenses outside range
+        expenseService.addExpense("Summer trip", "Travel", new BigDecimal("500.00"), LocalDate.of(2026, 7, 15));
+        List<Expense> results = expenseService.getExpensesByDateRange(oct1, oct31);
+        assertTrue(results.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Date range: Should reject inverted boundaries (startDate > endDate) or null dates")
+    void testGetExpensesByDateRangeInvalidInputs() {
+        LocalDate start = LocalDate.of(2026, 10, 20);
+        LocalDate end = LocalDate.of(2026, 10, 10);
+
+        assertThrows(IllegalArgumentException.class, () -> expenseService.getExpensesByDateRange(start, end),
+                "Start date after end date must throw IllegalArgumentException");
+        assertThrows(IllegalArgumentException.class, () -> expenseService.getExpensesByDateRange(null, end));
+        assertThrows(IllegalArgumentException.class, () -> expenseService.getExpensesByDateRange(start, null));
+    }
+
+    @Test
+    @DisplayName("Date range: Should return detached copies to preserve encapsulation")
+    void testGetExpensesByDateRangeDefensiveCopy() {
+        LocalDate today = LocalDate.now();
+        Expense added = expenseService.addExpense("Stationery", "Office", new BigDecimal("14.00"), today);
+
+        List<Expense> results = expenseService.getExpensesByDateRange(today, today);
+        results.get(0).setAmount(new BigDecimal("9999.00"));
+
+        Expense stored = expenseService.getExpenseById(added.getId()).orElseThrow();
+        assertEquals(new BigDecimal("14.00"), stored.getAmount(), "Stored amount must remain unchanged");
+    }
 }
