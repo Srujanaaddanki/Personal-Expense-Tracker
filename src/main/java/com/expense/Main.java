@@ -6,7 +6,9 @@ import com.expense.util.InputValidator;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Scanner;
 
@@ -49,7 +51,7 @@ public class Main {
         boolean running = true;
         while (running) {
             printMenu();
-            int choice = readMenuChoice(1, 11);
+            int choice = readMenuChoice(1, 12);
 
             switch (choice) {
                 case 1 -> handleAddExpense();
@@ -62,7 +64,8 @@ public class Main {
                 case 8 -> handleUpdateExpense();
                 case 9 -> handleDeleteExpense();
                 case 10 -> handleCalculateTotalSpending();
-                case 11 -> {
+                case 11 -> handleCategorySpendingSummary();
+                case 12 -> {
                     System.out.println("\nThank you for using Personal Expense Tracker. Goodbye!");
                     running = false;
                 }
@@ -83,8 +86,9 @@ public class Main {
         System.out.println("8. Update an Expense");
         System.out.println("9. Delete an Expense");
         System.out.println("10. Calculate Total Spending");
-        System.out.println("11. Exit");
-        System.out.print("Please enter your choice (1-11): ");
+        System.out.println("11. Category-wise Spending Summary");
+        System.out.println("12. Exit");
+        System.out.print("Please enter your choice (1-12): ");
     }
 
     private void handleAddExpense() {
@@ -248,6 +252,38 @@ public class Main {
 
         System.out.printf("Total Recorded Expenses: %d%n", count);
         System.out.printf("Total Amount Spent:      $%.2f%n", total);
+    }
+
+    private void handleCategorySpendingSummary() {
+        System.out.println("\n--- Category-wise Spending Summary ---");
+        List<Expense> all = expenseService.getAllExpenses();
+        if (all.isEmpty()) {
+            System.out.println("No expenses recorded yet.");
+            return;
+        }
+
+        BigDecimal grandTotal = expenseService.calculateTotalSpending();
+        Map<String, BigDecimal> categoryTotals = expenseService.calculateCategorySpending();
+        Map<String, BigDecimal> categoryPercentages = expenseService.calculateCategoryPercentages(categoryTotals, grandTotal);
+
+        List<Map.Entry<String, BigDecimal>> sortedEntries = new ArrayList<>(categoryTotals.entrySet());
+        sortedEntries.sort(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER));
+
+        System.out.println("------------------------------------------------------------------");
+        System.out.printf("%-20s | %-16s | %-15s%n", "Category", "Total Spent", "Share of Total");
+        System.out.println("------------------------------------------------------------------");
+        for (Map.Entry<String, BigDecimal> entry : sortedEntries) {
+            String category = entry.getKey();
+            BigDecimal total = entry.getValue();
+            BigDecimal pct = categoryPercentages.getOrDefault(category, BigDecimal.ZERO);
+            System.out.printf("%-20s | $%-15.2f | %-14s%n",
+                    truncate(category, 20),
+                    total,
+                    pct.toPlainString() + "%");
+        }
+        System.out.println("------------------------------------------------------------------");
+        System.out.printf("%-20s | $%-15.2f | %-14s%n", "OVERALL TOTAL", grandTotal, "-");
+        System.out.println("------------------------------------------------------------------");
     }
 
     // --- Safe, Non-Crashing Input Helper Methods ---

@@ -4,11 +4,15 @@ import com.expense.model.Expense;
 import com.expense.util.InputValidator;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -294,6 +298,83 @@ public class ExpenseService {
             total = total.add(expense.getAmount());
         }
         return total;
+    }
+
+    /**
+     * Aggregates total spending for each category using a hash map.
+     *
+     * <p><b>DSA Analysis:</b>
+     * <ul>
+     *   <li><b>Problem:</b> Accumulate monetary amounts grouped by category in a single pass.</li>
+     *   <li><b>Data Structure:</b> {@link java.util.HashMap}. Provides average \(O(1)\) lookup
+     *       and insertion per category key.</li>
+     *   <li><b>Case-Normalization Strategy:</b> Since category search is case-insensitive, spending
+     *       is aggregated case-insensitively (e.g. "Food", "food", "FOOD" merge into a single category).
+     *       Surrounding whitespace is trimmed. To ensure human-readable output, the first-encountered
+     *       display casing is preserved as the map key.</li>
+     *   <li><b>Time Complexity:</b> \(O(N)\) single pass over all \(N\) expenses.</li>
+     *   <li><b>Space Complexity:</b> \(O(K)\) where \(K\) is the count of distinct categories (\(K \le N\)).</li>
+     * </ul>
+     *
+     * @return An unmodifiable {@link Map} mapping each category to its aggregated total spending
+     */
+    public Map<String, BigDecimal> calculateCategorySpending() {
+        if (expenses.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, String> normalizedToDisplay = new HashMap<>();
+        Map<String, BigDecimal> categoryTotals = new HashMap<>();
+
+        for (Expense expense : expenses) {
+            String rawCategory = expense.getCategory().trim();
+            String normalizedKey = rawCategory.toLowerCase(Locale.ROOT);
+
+            // Preserve the first-seen readable label for display
+            String displayKey = normalizedToDisplay.computeIfAbsent(normalizedKey, k -> rawCategory);
+
+            // Accumulate using immutable BigDecimal addition
+            categoryTotals.merge(displayKey, expense.getAmount(), BigDecimal::add);
+        }
+
+        return Collections.unmodifiableMap(categoryTotals);
+    }
+
+    /**
+     * Calculates the percentage of total spending for each category.
+     *
+     * <p>Formula:
+     * \[\text{percentage} = \frac{\text{categoryTotal} \times 100}{\text{grandTotal}}\]
+     * Rounded to 2 decimal places using {@link RoundingMode#HALF_UP}.
+     *
+     * <p>Zero-total handling: If {@code grandTotal} is zero (or empty), every category maps to 0.00%.
+     *
+     * @param categoryTotals Map of category totals
+     * @param grandTotal     Sum total of all expenses
+     * @return An unmodifiable map of category names to their percentage of total spending
+     */
+    public Map<String, BigDecimal> calculateCategoryPercentages(Map<String, BigDecimal> categoryTotals, BigDecimal grandTotal) {
+        if (categoryTotals == null || categoryTotals.isEmpty() || grandTotal == null || grandTotal.compareTo(BigDecimal.ZERO) <= 0) {
+            Map<String, BigDecimal> zeroMap = new HashMap<>();
+            if (categoryTotals != null) {
+                for (String cat : categoryTotals.keySet()) {
+                    zeroMap.put(cat, BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+                }
+            }
+            return Collections.unmodifiableMap(zeroMap);
+        }
+
+        Map<String, BigDecimal> percentages = new HashMap<>();
+        BigDecimal hundred = new BigDecimal("100");
+
+        for (Map.Entry<String, BigDecimal> entry : categoryTotals.entrySet()) {
+            BigDecimal catTotal = entry.getValue();
+            BigDecimal pct = catTotal.multiply(hundred)
+                                     .divide(grandTotal, 2, RoundingMode.HALF_UP);
+            percentages.put(entry.getKey(), pct);
+        }
+
+        return Collections.unmodifiableMap(percentages);
     }
 
     /**

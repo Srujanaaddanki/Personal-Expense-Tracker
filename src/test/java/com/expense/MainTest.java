@@ -16,17 +16,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MainTest {
 
     @Test
-    @DisplayName("Should simulate adding expenses, searching, sorting, and exiting")
+    @DisplayName("Should simulate adding expenses, searching, sorting, category summary, and exiting")
     void testMainConsoleFlow() {
         // Simulated inputs:
         // 1 (Add Expense 1) -> "Textbook" -> "Education" -> "50.00" -> "2026-10-15"
-        // 1 (Add Expense 2) -> "Coffee" -> "Food" -> "4.50" -> "2026-10-20"
+        // 1 (Add Expense 2) -> "Coffee" -> "Food" -> "50.00" -> "2026-10-20"
         // 4 (Search by Category) -> "Education"
         // 5 (Filter by Date Range) -> "2026-10-01" -> "2026-10-31"
         // 6 (Sort by Amount) -> 1 (Ascending)
         // 7 (Sort by Date) -> 2 (Descending)
         // 10 (Calculate Total)
-        // 11 (Exit)
+        // 11 (Category-wise Spending Summary)
+        // 12 (Exit)
         String simulatedInput = String.join(System.lineSeparator(),
                 "1",
                 "Textbook",
@@ -36,7 +37,7 @@ class MainTest {
                 "1",
                 "Coffee",
                 "Food",
-                "4.50",
+                "50.00",
                 "2026-10-20",
                 "4",
                 "Education",
@@ -48,7 +49,8 @@ class MainTest {
                 "7",
                 "2",
                 "10",
-                "11"
+                "11",
+                "12"
         ) + System.lineSeparator();
 
         ByteArrayInputStream in = new ByteArrayInputStream(simulatedInput.getBytes(StandardCharsets.UTF_8));
@@ -71,7 +73,9 @@ class MainTest {
         assertTrue(output.contains("[FOUND] 2 expense(s) between 2026-10-01 and 2026-10-31:"));
         assertTrue(output.contains("[SORTED] 2 expense(s) sorted by amount (Lowest to Highest):"));
         assertTrue(output.contains("[SORTED] 2 expense(s) sorted by date (Newest First):"));
-        assertTrue(output.contains("Total Amount Spent:      $54.50"));
+        assertTrue(output.contains("Total Amount Spent:      $100.00"));
+        assertTrue(output.contains("--- Category-wise Spending Summary ---"));
+        assertTrue(output.contains("50.00%"));
         assertTrue(output.contains("Thank you for using Personal Expense Tracker. Goodbye!"));
     }
 
@@ -81,11 +85,11 @@ class MainTest {
         // Simulated inputs:
         // "abc" (invalid menu number)
         // "99" (out-of-range menu number)
-        // "11" (Exit)
+        // "12" (Exit)
         String simulatedInput = String.join(System.lineSeparator(),
                 "abc",
                 "99",
-                "11"
+                "12"
         ) + System.lineSeparator();
 
         ByteArrayInputStream in = new ByteArrayInputStream(simulatedInput.getBytes(StandardCharsets.UTF_8));
@@ -103,8 +107,8 @@ class MainTest {
         }
 
         String output = out.toString(StandardCharsets.UTF_8);
-        assertTrue(output.contains("Invalid input 'abc'. Please enter a valid number (1-11):"));
-        assertTrue(output.contains("Please enter a number between 1 and 11:"));
+        assertTrue(output.contains("Invalid input 'abc'. Please enter a valid number (1-12):"));
+        assertTrue(output.contains("Please enter a number between 1 and 12:"));
         assertTrue(output.contains("Thank you for using Personal Expense Tracker. Goodbye!"));
     }
 }

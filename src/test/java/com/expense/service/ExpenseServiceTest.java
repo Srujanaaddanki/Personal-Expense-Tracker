@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -558,5 +559,157 @@ class ExpenseServiceTest {
         assertThrows(UnsupportedOperationException.class, () -> sortedDate.remove(0));
         assertThrows(UnsupportedOperationException.class, () ->
                 sortedDate.add(new Expense(99L, "X", "Y", BigDecimal.ONE, LocalDate.now())));
+    }
+
+    // --- Category-wise Spending Aggregation Tests (Milestone 3C) ---
+
+    @Test
+    @DisplayName("Category spending: Multiple expenses in the same category are summed correctly")
+    void testCalculateCategorySpendingMultipleExpensesSameCategory() {
+        expenseService.addExpense("Groceries", "Food", new BigDecimal("45.50"), LocalDate.now());
+        expenseService.addExpense("Lunch", "Food", new BigDecimal("12.25"), LocalDate.now());
+        expenseService.addExpense("Coffee", "Food", new BigDecimal("4.25"), LocalDate.now());
+
+        Map<String, BigDecimal> summary = expenseService.calculateCategorySpending();
+
+        assertEquals(1, summary.size());
+        assertEquals(new BigDecimal("62.00"), summary.get("Food"));
+    }
+
+    @Test
+    @DisplayName("Category spending: Multiple distinct categories are aggregated independently")
+    void testCalculateCategorySpendingDistinctCategories() {
+        expenseService.addExpense("Textbook", "Education", new BigDecimal("60.00"), LocalDate.now());
+        expenseService.addExpense("Bus pass", "Transport", new BigDecimal("35.00"), LocalDate.now());
+        expenseService.addExpense("Movie", "Entertainment", new BigDecimal("15.00"), LocalDate.now());
+
+        Map<String, BigDecimal> summary = expenseService.calculateCategorySpending();
+
+        assertEquals(3, summary.size());
+        assertEquals(new BigDecimal("60.00"), summary.get("Education"));
+        assertEquals(new BigDecimal("35.00"), summary.get("Transport"));
+        assertEquals(new BigDecimal("15.00"), summary.get("Entertainment"));
+    }
+
+    @Test
+    @DisplayName("Category spending: Preserves high decimal precision with fractional amounts")
+    void testCalculateCategorySpendingDecimalPrecision() {
+        expenseService.addExpense("Item A", "Misc", new BigDecimal("10.555"), LocalDate.now());
+        expenseService.addExpense("Item B", "Misc", new BigDecimal("20.445"), LocalDate.now());
+
+        Map<String, BigDecimal> summary = expenseService.calculateCategorySpending();
+
+        assertEquals(new BigDecimal("31.000"), summary.get("Misc"));
+    }
+
+    @Test
+    @DisplayName("Category spending: Empty collection returns an unmodifiable empty map")
+    void testCalculateCategorySpendingEmptyCollection() {
+        Map<String, BigDecimal> summary = expenseService.calculateCategorySpending();
+
+        assertNotNull(summary);
+        assertTrue(summary.isEmpty());
+        assertThrows(UnsupportedOperationException.class, () -> summary.put("Food", BigDecimal.TEN));
+    }
+
+    @Test
+    @DisplayName("Category spending: Case-insensitive and whitespace normalization preserves first-seen display key")
+    void testCalculateCategorySpendingCaseInsensitiveAndWhitespace() {
+        // "Food", "food", "FOOD", "  Food  " should all merge into single category total
+        expenseService.addExpense("Breakfast", "Food", new BigDecimal("10.00"), LocalDate.now());
+        expenseService.addExpense("Lunch", "food", new BigDecimal("15.00"), LocalDate.now());
+        expenseService.addExpense("Dinner", "FOOD", new BigDecimal("25.00"), LocalDate.now());
+        expenseService.addExpense("Snack", "  Food  ", new BigDecimal("5.00"), LocalDate.now());
+
+        Map<String, BigDecimal> summary = expenseService.calculateCategorySpending();
+
+        assertEquals(1, summary.size(), "All variations of 'Food' must merge into 1 category");
+        assertTrue(summary.containsKey("Food"), "First-seen display label 'Food' must be preserved as key");
+        assertEquals(new BigDecimal("55.00"), summary.get("Food"));
+    }
+
+    @Test
+    @DisplayName("Category spending: Returned map is unmodifiable and cannot be tampered with")
+    void testCalculateCategorySpendingUnmodifiableMap() {
+        expenseService.addExpense("Fuel", "Transport", new BigDecimal("40.00"), LocalDate.now());
+
+        Map<String, BigDecimal> summary = expenseService.calculateCategorySpending();
+
+        assertThrows(UnsupportedOperationException.class, () -> summary.put("Hack", BigDecimal.TEN));
+        assertThrows(UnsupportedOperationException.class, () -> summary.remove("Transport"));
+    }
+
+    @Test
+    @DisplayName("Category percentages: Percentages sum to approximately 100% when total is positive")
+    void testCalculateCategoryPercentagesSumToHundred() {
+        expenseService.addExpense("Rent", "Housing", new BigDecimal("500.00"), LocalDate.now());
+        expenseService.addExpense("Groceries", "Food", new BigDecimal("300.00"), LocalDate.now());
+        expenseService.addExpense("Metro", "Transport", new BigDecimal("200.00"), LocalDate.now());
+
+        BigDecimal grandTotal = expenseService.calculateTotalSpending();
+        Map<String, BigDecimal> summary = expenseService.calculateCategorySpending();
+        Map<String, BigDecimal> percentages = expenseService.calculateCategoryPercentages(summary, grandTotal);
+
+        assertEquals(new BigDecimal("50.00"), percentages.get("Housing"));
+        assertEquals(new BigDecimal("30.00"), percentages.get("Food"));
+        assertEquals(new BigDecimal("20.00"), percentages.get("Transport"));
+
+        // Sum of percentages must equal 100.00%
+        BigDecimal sumPercentages = BigDecimal.ZERO;
+        for (BigDecimal pct : percentages.values()) {
+            sumPercentages = sumPercentages.add(pct);
+        }
+        assertEquals(new BigDecimal("100.00"), sumPercentages);
+    }
+
+    @Test
+    @DisplayName("Category percentages: Fractional shares sum approximately to 100% allowing for rounding")
+    void testCalculateCategoryPercentagesFractionalRounding() {
+        // $10, $10, $10 -> 33.33% each -> sum = 99.99%
+        expenseService.addExpense("A", "Cat A", new BigDecimal("10.00"), LocalDate.now());
+        expenseService.addExpense("B", "Cat B", new BigDecimal("10.00"), LocalDate.now());
+        expenseService.addExpense("C", "Cat C", new BigDecimal("10.00"), LocalDate.now());
+
+        BigDecimal grandTotal = expenseService.calculateTotalSpending();
+        Map<String, BigDecimal> summary = expenseService.calculateCategorySpending();
+        Map<String, BigDecimal> percentages = expenseService.calculateCategoryPercentages(summary, grandTotal);
+
+        assertEquals(new BigDecimal("33.33"), percentages.get("Cat A"));
+        assertEquals(new BigDecimal("33.33"), percentages.get("Cat B"));
+        assertEquals(new BigDecimal("33.33"), percentages.get("Cat C"));
+
+        BigDecimal sumPercentages = BigDecimal.ZERO;
+        for (BigDecimal pct : percentages.values()) {
+            sumPercentages = sumPercentages.add(pct);
+        }
+        // Within 0.05% of 100%
+        BigDecimal difference = new BigDecimal("100.00").subtract(sumPercentages).abs();
+        assertTrue(difference.compareTo(new BigDecimal("0.05")) <= 0);
+    }
+
+    @Test
+    @DisplayName("Category percentages: Explicitly handles zero grand total without division by zero")
+    void testCalculateCategoryPercentagesZeroTotalHandling() {
+        Map<String, BigDecimal> dummyTotals = Map.of("Food", BigDecimal.ZERO, "Transport", BigDecimal.ZERO);
+
+        Map<String, BigDecimal> percentages = expenseService.calculateCategoryPercentages(dummyTotals, BigDecimal.ZERO);
+
+        assertNotNull(percentages);
+        assertEquals(2, percentages.size());
+        assertEquals(new BigDecimal("0.00"), percentages.get("Food"));
+        assertEquals(new BigDecimal("0.00"), percentages.get("Transport"));
+
+        // Negative total safe
+        Map<String, BigDecimal> negativeTotalPercentages = expenseService.calculateCategoryPercentages(dummyTotals, new BigDecimal("-50.00"));
+        assertEquals(new BigDecimal("0.00"), negativeTotalPercentages.get("Food"));
+        assertEquals(new BigDecimal("0.00"), negativeTotalPercentages.get("Transport"));
+
+        // Null total safe
+        Map<String, BigDecimal> nullTotalPercentages = expenseService.calculateCategoryPercentages(dummyTotals, null);
+        assertEquals(new BigDecimal("0.00"), nullTotalPercentages.get("Food"));
+
+        // Empty map safe
+        assertTrue(expenseService.calculateCategoryPercentages(Map.of(), BigDecimal.ZERO).isEmpty());
+        assertTrue(expenseService.calculateCategoryPercentages(null, BigDecimal.ZERO).isEmpty());
     }
 }
