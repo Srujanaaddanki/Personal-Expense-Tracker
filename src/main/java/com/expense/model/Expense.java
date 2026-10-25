@@ -2,7 +2,6 @@ package com.expense.model;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Objects;
 
 /**
  * Represents an individual expense in the Personal Expense Tracker.
@@ -105,52 +104,54 @@ public class Expense {
     // --- Identity, Equality, and Hashing ---
 
     /**
-     * Equals implementation considering the trade-offs of identity vs state:
+     * Entity identity equality:
      * 
-     * 1. Two references pointing to the same memory address are always equal (reflexive).
-     * 2. Non-Expense objects or null references are never equal.
-     * 3. If both instances possess a non-null ID, equality is determined strictly by the ID,
-     *    which represents database/storage primary key identity.
-     * 4. If an instance lacks an ID (transient/unpersisted), equality falls back to
-     *    matching all core business attributes (description, category, amount, date).
+     * <ul>
+     *   <li><b>Reflexive:</b> An object is always equal to itself ({@code this == o}).</li>
+     *   <li><b>Proxy Compatibility:</b> Uses {@code instanceof Expense} rather than
+     *       {@code getClass() == o.getClass()} to support Hibernate / JPA runtime proxies
+     *       which dynamically subclass {@code Expense}.</li>
+     *   <li><b>Getter Access:</b> Uses {@link #getId()} and {@code expense.getId()} rather than
+     *       direct field access so lazy proxies can initialize and return the ID properly.</li>
+     *   <li><b>Entity Semantics:</b>
+     *       - Persisted expenses (with non-null IDs) are equal if and only if their IDs match.
+     *       - Unsaved expenses (with null IDs) only equal themselves (via {@code this == o}).
+     *       Two distinct unsaved instances are never equal, strictly preserving transitivity
+     *       and preventing erroneous deduplication.</li>
+     * </ul>
      */
     @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;
         }
-        if (o == null || getClass() != o.getClass()) {
+        if (!(o instanceof Expense)) {
             return false;
         }
         Expense expense = (Expense) o;
-
-        // If both entities have an assigned ID, compare by ID
-        if (id != null && expense.id != null) {
-            return Objects.equals(id, expense.id);
-        }
-
-        // Otherwise (for unpersisted entities), fall back to business attributes
-        return Objects.equals(description, expense.description) &&
-               Objects.equals(category, expense.category) &&
-               Objects.equals(amount, expense.amount) &&
-               Objects.equals(date, expense.date);
+        return getId() != null && getId().equals(expense.getId());
     }
 
     /**
-     * HashCode implementation considering mutable ID trade-offs:
+     * Stable hash code implementation for entities:
      * 
-     * If an object's ID changes (e.g. from null to an assigned ID after saving),
-     * relying on `id` in hashCode() would mutate the hash code after insertion into
-     * a HashSet or HashMap. This causes the object to become "lost" in the wrong bucket.
+     * <p>Because an entity's ID can change (from null when unsaved to an assigned value when persisted),
+     * including {@code id} in {@code hashCode()} would cause the hash code to change after insertion into
+     * a hash-based collection (such as {@link java.util.HashSet} or {@link java.util.HashMap}). This would
+     * corrupt collection buckets and make the entity unfindable.
      * 
-     * For entities, returning a constant or class-based hash ensures the hash code
-     * remains stable across all state transitions (transient -> persisted -> detached),
-     * fulfilling the contract: if a.equals(b), then a.hashCode() == b.hashCode().
+     * <p>Returning {@code Expense.class.hashCode()} guarantees:
+     * <ol>
+     *   <li>Stability: The hash code never changes across transient -> persisted state transitions.</li>
+     *   <li>Contract fulfillment: If {@code a.equals(b)}, both share the same base class hash code,
+     *       ensuring {@code a.hashCode() == b.hashCode()} is always true.</li>
+     *   <li>Proxy consistency: Even if {@code this} or {@code o} is a Hibernate proxy subclass,
+     *       both reference {@code Expense.class.hashCode()} rather than dynamic proxy classes.</li>
+     * </ol>
      */
     @Override
     public int hashCode() {
-        // Stable class-based hash code prevents bucket corruption in hash collections
-        return getClass().hashCode();
+        return Expense.class.hashCode();
     }
 
     @Override
