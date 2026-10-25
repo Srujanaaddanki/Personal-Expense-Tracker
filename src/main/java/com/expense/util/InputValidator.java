@@ -100,6 +100,18 @@ public final class InputValidator {
     }
 
     /**
+     * Validates that k is a positive integer strictly greater than zero.
+     *
+     * @param k Number of top elements to retrieve
+     * @throws IllegalArgumentException if k is less than or equal to zero
+     */
+    public static void validateK(int k) {
+        if (k <= 0) {
+            throw new IllegalArgumentException("K must be a positive integer (greater than 0).");
+        }
+    }
+
+    /**
      * Safely parses a string into a positive BigDecimal.
      *
      * @param amountStr Text representation of amount

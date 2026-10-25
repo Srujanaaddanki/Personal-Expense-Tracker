@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.PriorityQueue;
 
 /**
  * Service class handling core expense business logic.
@@ -226,6 +227,75 @@ public class ExpenseService {
 
         sorted.sort(comparator);
         return Collections.unmodifiableList(sorted);
+    }
+
+    /**
+     * Retrieves the top K highest-value expenses using a bounded Min-Heap (PriorityQueue).
+     *
+     * <p><b>DSA Analysis:</b>
+     * <ul>
+     *   <li><b>Problem:</b> Identify the \(K\) largest expenses from a stream/collection of size \(N\).</li>
+     *   <li><b>Algorithm:</b> Bounded Min-Heap of capacity \(K\).
+     *       We iterate through all expenses, inserting each into a min-heap.
+     *       Whenever the heap size exceeds \(K\), the minimum element is evicted via {@link PriorityQueue#poll()}.
+     *       At the end of the iteration, the heap retains precisely the \(K\) largest elements.</li>
+     *   <li><b>Comparator &amp; Deterministic Tie-Breaking:</b>
+     *       In the min-heap, the element considered "smallest" sits at the root and is evicted first.
+     *       When monetary amounts are equal, expenses with <i>higher</i> IDs have lower priority
+     *       and must be evicted first so that expenses with <i>lower</i> IDs are retained in the top \(K\).
+     *       Therefore, the min-heap comparator orders primarily by amount ascending, and secondarily
+     *       by ID in reverse (descending) order:
+     *       {@code Comparator.comparing(Expense::getAmount).thenComparing(Expense::getId, Comparator.reverseOrder())}.</li>
+     *   <li><b>Final Output Ordering:</b> The retained elements are extracted and sorted in presentation order:
+     *       Amount descending, then ID ascending:
+     *       {@code Comparator.comparing(Expense::getAmount, Comparator.reverseOrder()).thenComparing(Expense::getId)}.</li>
+     *   <li><b>Boundary &amp; Edge Conditions:</b>
+     *       <ul>
+     *         <li>If \(K \le 0\), throws {@link IllegalArgumentException}.</li>
+     *         <li>If the collection is empty, returns an empty unmodifiable list.</li>
+     *         <li>If \(K \ge N\), delegates directly to {@link #getExpensesSortedByAmount(boolean)} (descending)
+     *             to return all expenses in \(O(N \log N)\) without heap overhead.</li>
+     *       </ul>
+     *   </li>
+     *   <li><b>Time Complexity:</b> \(O(N \log K)\) for \(K &lt; N\), where each insertion/eviction into the heap
+     *       takes \(O(\log K)\). Sorting the \(K\) extracted elements takes \(O(K \log K)\).
+     *       When \(K \ll N\), this is strictly superior to full sorting \(O(N \log N)\).</li>
+     *   <li><b>Space Complexity:</b> \(O(K)\) auxiliary memory for the heap and detached result list.</li>
+     * </ul>
+     *
+     * @param k The number of top expenses to return (\(k &gt; 0\))
+     * @return An unmodifiable list containing detached copies of the top \(K\) expenses in descending order
+     * @throws IllegalArgumentException if \(k \le 0\)
+     */
+    public List<Expense> getTopKExpenses(int k) {
+        InputValidator.validateK(k);
+
+        if (expenses.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        if (k >= expenses.size()) {
+            return getExpensesSortedByAmount(false);
+        }
+
+        Comparator<Expense> minHeapComparator = Comparator
+                .comparing(Expense::getAmount)
+                .thenComparing(Expense::getId, Comparator.reverseOrder());
+
+        PriorityQueue<Expense> minHeap = new PriorityQueue<>(k + 1, minHeapComparator);
+
+        for (Expense expense : expenses) {
+            minHeap.offer(copyExpense(expense));
+            if (minHeap.size() > k) {
+                minHeap.poll();
+            }
+        }
+
+        List<Expense> result = new ArrayList<>(minHeap);
+        result.sort(Comparator.comparing(Expense::getAmount, Comparator.reverseOrder())
+                              .thenComparing(Expense::getId));
+
+        return Collections.unmodifiableList(result);
     }
 
     /**

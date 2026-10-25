@@ -51,7 +51,7 @@ public class Main {
         boolean running = true;
         while (running) {
             printMenu();
-            int choice = readMenuChoice(1, 12);
+            int choice = readMenuChoice(1, 13);
 
             switch (choice) {
                 case 1 -> handleAddExpense();
@@ -65,7 +65,8 @@ public class Main {
                 case 9 -> handleDeleteExpense();
                 case 10 -> handleCalculateTotalSpending();
                 case 11 -> handleCategorySpendingSummary();
-                case 12 -> {
+                case 12 -> handleTopKExpenses();
+                case 13 -> {
                     System.out.println("\nThank you for using Personal Expense Tracker. Goodbye!");
                     running = false;
                 }
@@ -87,8 +88,9 @@ public class Main {
         System.out.println("9. Delete an Expense");
         System.out.println("10. Calculate Total Spending");
         System.out.println("11. Category-wise Spending Summary");
-        System.out.println("12. Exit");
-        System.out.print("Please enter your choice (1-12): ");
+        System.out.println("12. Top K Highest Expenses");
+        System.out.println("13. Exit");
+        System.out.print("Please enter your choice (1-13): ");
     }
 
     private void handleAddExpense() {
@@ -286,6 +288,24 @@ public class Main {
         System.out.println("------------------------------------------------------------------");
     }
 
+    private void handleTopKExpenses() {
+        System.out.println("\n--- Top K Highest Expenses ---");
+        List<Expense> all = expenseService.getAllExpenses();
+        if (all.isEmpty()) {
+            System.out.println("No expenses recorded yet.");
+            return;
+        }
+
+        int k = readPositiveInt("Enter number of top expenses to display (K): ");
+        try {
+            List<Expense> topK = expenseService.getTopKExpenses(k);
+            System.out.printf("\n[TOP %d] Displaying top %d highest-value expense(s):%n", topK.size(), topK.size());
+            printExpenseTable(topK);
+        } catch (IllegalArgumentException e) {
+            System.out.println("\n[ERROR] " + e.getMessage());
+        }
+    }
+
     // --- Safe, Non-Crashing Input Helper Methods ---
 
     private int readMenuChoice(int min, int max) {
@@ -299,6 +319,22 @@ public class Main {
                 System.out.printf("Please enter a number between %d and %d: ", min, max);
             } catch (NumberFormatException e) {
                 System.out.printf("Invalid input '%s'. Please enter a valid number (%d-%d): ", line, min, max);
+            }
+        }
+    }
+
+    private int readPositiveInt(String prompt) {
+        System.out.print(prompt);
+        while (true) {
+            String line = scanner.nextLine().trim();
+            try {
+                int val = Integer.parseInt(line);
+                if (val > 0) {
+                    return val;
+                }
+                System.out.print("Number must be greater than 0. Please try again: ");
+            } catch (NumberFormatException e) {
+                System.out.print("Invalid integer format. Please enter a positive integer: ");
             }
         }
     }

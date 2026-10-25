@@ -99,4 +99,20 @@ class InputValidatorTest {
         assertThrows(IllegalArgumentException.class, () -> InputValidator.parseDate("invalid"));
         assertThrows(IllegalArgumentException.class, () -> InputValidator.parseDate(""));
     }
+
+    @Test
+    @DisplayName("Should accept positive K and reject zero or negative")
+    void testValidateK() {
+        assertDoesNotThrow(() -> InputValidator.validateK(1));
+        assertDoesNotThrow(() -> InputValidator.validateK(5));
+        assertDoesNotThrow(() -> InputValidator.validateK(100));
+
+        IllegalArgumentException exZero = assertThrows(IllegalArgumentException.class, () -> InputValidator.validateK(0));
+        assertEquals("K must be a positive integer (greater than 0).", exZero.getMessage());
+
+        IllegalArgumentException exNeg = assertThrows(IllegalArgumentException.class, () -> InputValidator.validateK(-1));
+        assertEquals("K must be a positive integer (greater than 0).", exNeg.getMessage());
+
+        assertThrows(IllegalArgumentException.class, () -> InputValidator.validateK(-100));
+    }
 }

@@ -712,4 +712,191 @@ class ExpenseServiceTest {
         assertTrue(expenseService.calculateCategoryPercentages(Map.of(), BigDecimal.ZERO).isEmpty());
         assertTrue(expenseService.calculateCategoryPercentages(null, BigDecimal.ZERO).isEmpty());
     }
+
+    // --- Top-K Highest Expenses Tests (Milestone 3D) ---
+
+    @Test
+    @DisplayName("Top K: Returns K highest value expenses in descending order")
+    void testTopKExpensesNormal() {
+        Expense e1 = expenseService.addExpense("Snack", "Food", new BigDecimal("10.00"), LocalDate.now());
+        Expense e2 = expenseService.addExpense("Groceries", "Food", new BigDecimal("50.00"), LocalDate.now());
+        Expense e3 = expenseService.addExpense("Book", "Education", new BigDecimal("25.00"), LocalDate.now());
+        Expense e4 = expenseService.addExpense("Monitor", "Electronics", new BigDecimal("100.00"), LocalDate.now());
+        Expense e5 = expenseService.addExpense("Coffee", "Food", new BigDecimal("5.00"), LocalDate.now());
+
+        List<Expense> top3 = expenseService.getTopKExpenses(3);
+
+        assertEquals(3, top3.size());
+        assertEquals(e4.getId(), top3.get(0).getId());
+        assertEquals(new BigDecimal("100.00"), top3.get(0).getAmount());
+        assertEquals(e2.getId(), top3.get(1).getId());
+        assertEquals(new BigDecimal("50.00"), top3.get(1).getAmount());
+        assertEquals(e3.getId(), top3.get(2).getId());
+        assertEquals(new BigDecimal("25.00"), top3.get(2).getAmount());
+    }
+
+    @Test
+    @DisplayName("Top K: Ties in amount are resolved deterministically by ascending ID")
+    void testTopKExpensesTieBreakingAscendingId() {
+        Expense e1 = expenseService.addExpense("Item A", "Food", new BigDecimal("50.00"), LocalDate.now()); // ID 1
+        Expense e2 = expenseService.addExpense("Item B", "Food", new BigDecimal("50.00"), LocalDate.now()); // ID 2
+        Expense e3 = expenseService.addExpense("Item C", "Food", new BigDecimal("50.00"), LocalDate.now()); // ID 3
+        Expense e4 = expenseService.addExpense("Item D", "Food", new BigDecimal("100.00"), LocalDate.now()); // ID 4
+        Expense e5 = expenseService.addExpense("Item E", "Food", new BigDecimal("10.00"), LocalDate.now()); // ID 5
+
+        // Top 1: Only Item D ($100.00)
+        List<Expense> top1 = expenseService.getTopKExpenses(1);
+        assertEquals(1, top1.size());
+        assertEquals(e4.getId(), top1.get(0).getId());
+
+        // Top 2: Item D ($100.00), then Item A ($50.00, ID 1)
+        List<Expense> top2 = expenseService.getTopKExpenses(2);
+        assertEquals(2, top2.size());
+        assertEquals(e4.getId(), top2.get(0).getId());
+        assertEquals(e1.getId(), top2.get(1).getId());
+
+        // Top 3: Item D ($100.00), Item A ($50.00, ID 1), Item B ($50.00, ID 2)
+        List<Expense> top3 = expenseService.getTopKExpenses(3);
+        assertEquals(3, top3.size());
+        assertEquals(e4.getId(), top3.get(0).getId());
+        assertEquals(e1.getId(), top3.get(1).getId());
+        assertEquals(e2.getId(), top3.get(2).getId());
+
+        // Top 4: Item D ($100.00), Item A ($50.00, ID 1), Item B ($50.00, ID 2), Item C ($50.00, ID 3)
+        List<Expense> top4 = expenseService.getTopKExpenses(4);
+        assertEquals(4, top4.size());
+        assertEquals(e4.getId(), top4.get(0).getId());
+        assertEquals(e1.getId(), top4.get(1).getId());
+        assertEquals(e2.getId(), top4.get(2).getId());
+        assertEquals(e3.getId(), top4.get(3).getId());
+
+        // Top 5: All expenses
+        List<Expense> top5 = expenseService.getTopKExpenses(5);
+        assertEquals(5, top5.size());
+        assertEquals(e4.getId(), top5.get(0).getId());
+        assertEquals(e1.getId(), top5.get(1).getId());
+        assertEquals(e2.getId(), top5.get(2).getId());
+        assertEquals(e3.getId(), top5.get(3).getId());
+        assertEquals(e5.getId(), top5.get(4).getId());
+    }
+
+    @Test
+    @DisplayName("Top K: K = 1 returns the single highest expense")
+    void testTopKExpensesKEqualsOne() {
+        expenseService.addExpense("Lunch", "Food", new BigDecimal("20.00"), LocalDate.now());
+        Expense high = expenseService.addExpense("Dinner", "Food", new BigDecimal("80.00"), LocalDate.now());
+        expenseService.addExpense("Breakfast", "Food", new BigDecimal("40.00"), LocalDate.now());
+
+        List<Expense> top1 = expenseService.getTopKExpenses(1);
+
+        assertEquals(1, top1.size());
+        assertEquals(high.getId(), top1.get(0).getId());
+        assertEquals(new BigDecimal("80.00"), top1.get(0).getAmount());
+    }
+
+    @Test
+    @DisplayName("Top K: K equal to total expense count returns all expenses sorted descending")
+    void testTopKExpensesKEqualsSize() {
+        Expense e1 = expenseService.addExpense("Low", "Food", new BigDecimal("10.00"), LocalDate.now());
+        Expense e2 = expenseService.addExpense("Mid", "Food", new BigDecimal("30.00"), LocalDate.now());
+        Expense e3 = expenseService.addExpense("High", "Food", new BigDecimal("50.00"), LocalDate.now());
+
+        List<Expense> result = expenseService.getTopKExpenses(3);
+
+        assertEquals(3, result.size());
+        assertEquals(e3.getId(), result.get(0).getId());
+        assertEquals(e2.getId(), result.get(1).getId());
+        assertEquals(e1.getId(), result.get(2).getId());
+    }
+
+    @Test
+    @DisplayName("Top K: K greater than total expense count returns all expenses sorted descending")
+    void testTopKExpensesKGreaterThanSize() {
+        Expense e1 = expenseService.addExpense("Low", "Food", new BigDecimal("10.00"), LocalDate.now());
+        Expense e2 = expenseService.addExpense("Mid", "Food", new BigDecimal("30.00"), LocalDate.now());
+        Expense e3 = expenseService.addExpense("High", "Food", new BigDecimal("50.00"), LocalDate.now());
+
+        List<Expense> result = expenseService.getTopKExpenses(100);
+
+        assertEquals(3, result.size());
+        assertEquals(e3.getId(), result.get(0).getId());
+        assertEquals(e2.getId(), result.get(1).getId());
+        assertEquals(e1.getId(), result.get(2).getId());
+    }
+
+    @Test
+    @DisplayName("Top K: Empty collection returns an unmodifiable empty list")
+    void testTopKExpensesEmptyCollection() {
+        List<Expense> result = expenseService.getTopKExpenses(5);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+        assertThrows(UnsupportedOperationException.class, () ->
+                result.add(new Expense(1L, "Hack", "Misc", BigDecimal.TEN, LocalDate.now())));
+    }
+
+    @Test
+    @DisplayName("Top K: Single element collection returns single item for K = 1 and K > 1")
+    void testTopKExpensesSingleElement() {
+        Expense single = expenseService.addExpense("Solo", "Misc", new BigDecimal("42.00"), LocalDate.now());
+
+        List<Expense> k1 = expenseService.getTopKExpenses(1);
+        assertEquals(1, k1.size());
+        assertEquals(single.getId(), k1.get(0).getId());
+
+        List<Expense> k5 = expenseService.getTopKExpenses(5);
+        assertEquals(1, k5.size());
+        assertEquals(single.getId(), k5.get(0).getId());
+    }
+
+    @Test
+    @DisplayName("Top K: Rejects non-positive K values (K <= 0)")
+    void testTopKExpensesInvalidK() {
+        assertThrows(IllegalArgumentException.class, () -> expenseService.getTopKExpenses(0));
+        assertThrows(IllegalArgumentException.class, () -> expenseService.getTopKExpenses(-1));
+        assertThrows(IllegalArgumentException.class, () -> expenseService.getTopKExpenses(-100));
+    }
+
+    @Test
+    @DisplayName("Top K non-destructive: Does NOT alter internal insertion order")
+    void testTopKExpensesNonDestructive() {
+        Expense first = expenseService.addExpense("First Added", "Food", new BigDecimal("10.00"), LocalDate.now());
+        Expense second = expenseService.addExpense("Second Added", "Food", new BigDecimal("90.00"), LocalDate.now());
+        Expense third = expenseService.addExpense("Third Added", "Food", new BigDecimal("50.00"), LocalDate.now());
+
+        List<Expense> top2 = expenseService.getTopKExpenses(2);
+        assertEquals(second.getId(), top2.get(0).getId());
+        assertEquals(third.getId(), top2.get(1).getId());
+
+        // Stored list must remain in original insertion order: first -> second -> third
+        List<Expense> stored = expenseService.getAllExpenses();
+        assertEquals(first.getId(), stored.get(0).getId());
+        assertEquals(second.getId(), stored.get(1).getId());
+        assertEquals(third.getId(), stored.get(2).getId());
+    }
+
+    @Test
+    @DisplayName("Top K defensive copy: Mutating returned elements does NOT alter stored state")
+    void testTopKExpensesDefensiveCopy() {
+        Expense added = expenseService.addExpense("Laptop", "Electronics", new BigDecimal("800.00"), LocalDate.now());
+
+        List<Expense> top1 = expenseService.getTopKExpenses(1);
+        top1.get(0).setAmount(new BigDecimal("1.00"));
+
+        Expense stored = expenseService.getExpenseById(added.getId()).orElseThrow();
+        assertEquals(new BigDecimal("800.00"), stored.getAmount(), "Stored amount must remain unchanged");
+    }
+
+    @Test
+    @DisplayName("Top K unmodifiable: Attempting to modify returned list throws UnsupportedOperationException")
+    void testTopKExpensesUnmodifiableList() {
+        expenseService.addExpense("Phone", "Electronics", new BigDecimal("600.00"), LocalDate.now());
+        expenseService.addExpense("Cover", "Electronics", new BigDecimal("20.00"), LocalDate.now());
+
+        List<Expense> top1 = expenseService.getTopKExpenses(1);
+
+        assertThrows(UnsupportedOperationException.class, () -> top1.remove(0));
+        assertThrows(UnsupportedOperationException.class, () ->
+                top1.add(new Expense(99L, "Hack", "Evil", BigDecimal.ONE, LocalDate.now())));
+    }
 }
