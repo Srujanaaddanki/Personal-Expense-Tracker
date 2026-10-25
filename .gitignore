@@ -1,0 +1,23 @@
+# Maven build target
+target/
+*.class
+
+# IDE and Editor configurations
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Environment and sensitive files
+.env
+*.local
+
+# Application data files
+data/
+*.csv
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
